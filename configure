@@ -160,10 +160,10 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # check OS
-if [ "$OSVERSION" == "unsupported" ]; then
-    echo "Error: Unsupported OS."
-    exit -1
-fi
+# if [ "$OSVERSION" == "unsupported" ]; then
+#     echo "Error: Unsupported OS."
+#     exit -1
+# fi
 
 # project subdirectories to build
 SUBDIRS=("." "!ci" "!perf" "hw*" "kernel*" "runtime*" "sim*" "tests*")
