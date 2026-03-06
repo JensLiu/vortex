@@ -35,6 +35,7 @@
 `define VX_DCR_MPM_CLASS_NONE           0
 `define VX_DCR_MPM_CLASS_CORE           1
 `define VX_DCR_MPM_CLASS_MEM            2
+`define VX_DCR_MPM_CLASS_3              3
 
 // User Floating-Point CSRs ///////////////////////////////////////////////////
 
@@ -214,5 +215,12 @@
 `define VX_CSR_NUM_WARPS                12'hFC1
 `define VX_CSR_NUM_CORES                12'hFC2
 `define VX_CSR_LOCAL_MEM_BASE           12'hFC3
+
+// Machine Performance-monitoring counters class 3 (custom) ////////////////////////
+
+`define VX_CSR_MPM_TOTAL_ISSUED_WARPS   12'hB03
+`define VX_CSR_MPM_TOTAL_ISSUED_WARPS_H 12'hB83
+`define VX_CSR_MPM_TOTAL_ACTIVE_THREADS 12'hB04
+`define VX_CSR_MPM_TOTAL_ACTIVE_THREADS_H 12'hB84
 
 `endif // VX_TYPES_VH

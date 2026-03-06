@@ -69,6 +69,8 @@ public:
     uint64_t stores;
     uint64_t ifetch_latency;
     uint64_t load_latency;
+    uint64_t total_issued_warps;
+    uint64_t total_active_threads;
 
     PerfStats()
       : cycles(0)
@@ -96,6 +98,8 @@ public:
       , stores(0)
       , ifetch_latency(0)
       , load_latency(0)
+      , total_issued_warps(0)
+      , total_active_threads(0)
     {}
   };
 

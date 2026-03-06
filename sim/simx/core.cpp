@@ -229,6 +229,10 @@ void Core::schedule() {
   // advance to fetch stage
   fetch_latch_.push(trace);
   pending_instrs_.push_back(trace);
+
+  // track active threads
+  perf_stats_.total_issued_warps += 1;
+  perf_stats_.total_active_threads += trace->tmask.count();
 }
 
 void Core::fetch() {
