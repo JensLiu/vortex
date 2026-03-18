@@ -10,3 +10,9 @@
 [submodule "third_party/hardfloat"]
 	path = third_party/hardfloat
 	url = https://github.com/bsg-external/HardFloat.git
+[submodule "hw/rtl/mmu"]
+	path = hw/rtl/mmu
+	url = https://github.com/bsc-loca/mmu.git
+[submodule "hw/rtl/mmu/bsc_mmu"]
+	path = hw/rtl/mmu/bsc_mmu
+	url = git@github.com:JensLiu/mmu.git
