@@ -72,6 +72,10 @@ package VX_gpu_pkg;
 `endif
 `endif
 
+    localparam MEM_CLIENT_ID_WIDTH = 1;
+    localparam MEM_CLIENT_LSU = 0;
+    localparam MEM_CLIENT_PTW = 1;
+
 `ifndef NDEBUG
 	localparam PC_BITS = `XLEN;
     function automatic logic [`XLEN-1:0] to_fullPC(input logic[PC_BITS-1:0] pc);
@@ -801,7 +805,7 @@ package VX_gpu_pkg;
     // Core request tag Id bits
     localparam DCACHE_MERGED_REQS   = (`NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE;
     localparam DCACHE_MEM_BATCHES   = `CDIV(DCACHE_MERGED_REQS, DCACHE_CHANNELS);
-    localparam DCACHE_TAG_ID_BITS   = (`CLOG2(`LSUQ_OUT_SIZE) + `CLOG2(DCACHE_MEM_BATCHES));
+    localparam DCACHE_TAG_ID_BITS   = (MEM_CLIENT_ID_WIDTH + `CLOG2(`LSUQ_OUT_SIZE) + `CLOG2(DCACHE_MEM_BATCHES));
 
     // Core request tag bits
     localparam DCACHE_TAG_WIDTH	    = (UUID_WIDTH + DCACHE_TAG_ID_BITS);

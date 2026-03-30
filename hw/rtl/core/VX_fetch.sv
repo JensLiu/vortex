@@ -24,6 +24,9 @@ module VX_fetch import VX_gpu_pkg::*; #(
     // Icache interface
     VX_mem_bus_if.master    icache_bus_if,
 
+    // Address translation interface
+    VX_addr_translation_if.master addr_translation_if,
+
     // inputs
     VX_schedule_if.slave    schedule_if,
 
@@ -95,12 +98,14 @@ module VX_fetch import VX_gpu_pkg::*; #(
     `RUNTIME_ASSERT((!schedule_if.valid || schedule_if.data.PC != 0),
         ("%t: *** %s invalid PC=0x%0h, wid=%0d, tmask=%b (#%0d)", $time, INSTANCE_ID, to_fullPC(schedule_if.data.PC), schedule_if.data.wid, schedule_if.data.tmask, schedule_if.data.uuid))
 
+    // TODO: address translation here
+    assign addr_translation_if.valid = schedule_if.valid && ibuf_ready;
+    assign addr_translation_if.va = schedule_if.data.PC[2-(`XLEN-PC_BITS) +: ICACHE_ADDR_WIDTH];
     // Icache Request
-
-    assign icache_req_valid = schedule_if.valid && ibuf_ready;
-    assign icache_req_addr  = schedule_if.data.PC[2-(`XLEN-PC_BITS) +: ICACHE_ADDR_WIDTH]; // 4-byte aligned addresses
+    assign icache_req_valid = addr_translation_if.ready;
+    assign icache_req_addr  = addr_translation_if.pa; // 4-byte aligned addresses
     assign icache_req_tag   = {schedule_if.data.uuid, req_tag};
-    assign schedule_if.ready = icache_req_ready && ibuf_ready;
+    assign schedule_if.ready = icache_req_ready && ibuf_ready && addr_translation_if.ready;
 
     VX_elastic_buffer #(
         .DATAW   (ICACHE_ADDR_WIDTH + ICACHE_TAG_WIDTH),

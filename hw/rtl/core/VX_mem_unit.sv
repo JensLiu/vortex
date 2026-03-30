@@ -137,7 +137,7 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
     VX_lsu_mem_if #(
         .NUM_LANES (DCACHE_CHANNELS),
         .DATA_SIZE (DCACHE_WORD_SIZE),
-        .TAG_WIDTH (DCACHE_TAG_WIDTH)
+        .TAG_WIDTH (DCACHE_TAG_WIDTH - MEM_CLIENT_ID_WIDTH)
     ) dcache_coalesced_if[`NUM_LSU_BLOCKS]();
 
 `ifdef PERF_ENABLE
@@ -227,6 +227,37 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
 
     end
 
+    VX_lsu_mem_if #(
+        .NUM_LANES (DCACHE_CHANNELS),
+        .DATA_SIZE (DCACHE_WORD_SIZE),
+        .TAG_WIDTH (DCACHE_TAG_WIDTH)
+    ) dcache_coalesced_with_client_id_if[`NUM_LSU_BLOCKS]();
+
+    for (genvar i = 0; i < `NUM_LSU_BLOCKS; ++i) begin : g_client_id_injector
+        // request injection
+        assign dcache_coalesced_with_client_id_if[i].req_valid = dcache_coalesced_if[i].req_valid;
+        assign dcache_coalesced_with_client_id_if[i].req_data.mask = dcache_coalesced_if[i].req_data.mask;
+        assign dcache_coalesced_with_client_id_if[i].req_data.rw = dcache_coalesced_if[i].req_data.rw;
+        assign dcache_coalesced_with_client_id_if[i].req_data.addr = dcache_coalesced_if[i].req_data.addr;
+        assign dcache_coalesced_with_client_id_if[i].req_data.data = dcache_coalesced_if[i].req_data.data;
+        assign dcache_coalesced_with_client_id_if[i].req_data.byteen = dcache_coalesced_if[i].req_data.byteen;
+        assign dcache_coalesced_with_client_id_if[i].req_data.flags = dcache_coalesced_if[i].req_data.flags;
+        assign dcache_coalesced_with_client_id_if[i].req_data.tag.uuid = dcache_coalesced_if[i].req_data.tag.uuid;
+        /* verilator lint_off WIDTHTRUNC */
+        assign dcache_coalesced_with_client_id_if[i].req_data.tag.value = {
+            MEM_CLIENT_ID_WIDTH'(MEM_CLIENT_LSU), dcache_coalesced_if[i].req_data.tag.value
+        };
+        /* verilator lint_on WIDTHTRUNC */
+        assign dcache_coalesced_if[i].req_ready = dcache_coalesced_with_client_id_if[i].req_ready;
+        // response removal
+        assign dcache_coalesced_if[i].rsp_valid = dcache_coalesced_with_client_id_if[i].rsp_valid;
+        assign dcache_coalesced_if[i].rsp_data.mask = dcache_coalesced_with_client_id_if[i].rsp_data.mask;
+        assign dcache_coalesced_if[i].rsp_data.data = dcache_coalesced_with_client_id_if[i].rsp_data.data;
+        assign dcache_coalesced_if[i].rsp_data.tag.uuid = dcache_coalesced_with_client_id_if[i].rsp_data.tag.uuid;
+        assign dcache_coalesced_if[i].rsp_data.tag.value = dcache_coalesced_with_client_id_if[i].rsp_data.tag.value[DCACHE_TAG_ID_BITS-MEM_CLIENT_ID_WIDTH-1:0];
+        assign dcache_coalesced_with_client_id_if[i].rsp_ready = dcache_coalesced_if[i].rsp_ready;
+    end
+
     for (genvar i = 0; i < `NUM_LSU_BLOCKS; ++i) begin : g_dcache_adapters
 
         VX_mem_bus_if #(
@@ -245,7 +276,7 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         ) dcache_adapter (
             .clk        (clk),
             .reset      (reset),
-            .lsu_mem_if (dcache_coalesced_if[i]),
+            .lsu_mem_if (dcache_coalesced_with_client_id_if[i]),
             .mem_bus_if (dcache_bus_tmp_if)
         );
 
