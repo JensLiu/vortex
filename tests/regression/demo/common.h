@@ -1,6 +1,8 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
+#include <cstdint>
+
 #ifndef TYPE
 #define TYPE int
 #endif

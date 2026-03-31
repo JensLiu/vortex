@@ -3,6 +3,8 @@
 
 #define NUM_LOADS 8
 
+#include <cstdint>
+
 typedef struct {
   uint32_t num_tasks;
   uint32_t size;

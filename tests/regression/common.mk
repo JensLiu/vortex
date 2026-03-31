@@ -65,6 +65,20 @@ CXXFLAGS += $(CONFIGS)
 
 LDFLAGS += -L$(VORTEX_RT_PATH) -lvortex
 
+CXXFLAGS += -pthread
+# Must match libsimx: espiral SimXDevice gates set_satp_by_addr on VM_ENABLE; without it
+# the MMU never sees the guest SATP and fetches see poison (e.g. 0xbaadf00d).
+CXXFLAGS += -DVM_ENABLE
+CXXFLAGS += -I$(VORTEX_HOME)/runtime/espiral \
+            -I$(VORTEX_HOME)/runtime/espiral/includes \
+            -I$(VORTEX_HOME)/runtime/espiral/mm \
+            -I$(VORTEX_HOME)/runtime/espiral/backend \
+            -I$(VORTEX_HOME)/runtime/common \
+            -I$(VORTEX_HOME)/sim \
+			-I$(VORTEX_HOME)/sim/simx
+LDFLAGS += -lsimx -Wl,-rpath,$(VORTEX_RT_PATH)
+
+
 # Debugging
 ifdef DEBUG
 	CXXFLAGS += -g -O0
@@ -96,7 +110,7 @@ kernel.elf: $(VX_SRCS)
 	$(VX_CXX) $(VX_CFLAGS) $^ $(VX_LDFLAGS) -o kernel.elf
 
 $(PROJECT): $(SRCS)
-	$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
+	$(CXX) $(CXXFLAGS) $(SRCS) $(LDFLAGS) -o $@
 
 run-simx: $(PROJECT) kernel.vxbin
 	LD_LIBRARY_PATH=$(VORTEX_RT_PATH):$(LD_LIBRARY_PATH) VORTEX_DRIVER=simx ./$(PROJECT) $(OPTS)
@@ -117,7 +131,7 @@ else
 endif
 
 .depend: $(SRCS)
-	$(CXX) $(CXXFLAGS) -MM $^ > .depend;
+	$(CXX) $(CXXFLAGS) -MM -MT $(PROJECT) $^ > .depend;
 
 clean-kernel:
 	rm -rf *.elf *.vxbin *.dump

@@ -1,33 +1,37 @@
-#include <iostream>
-#include <unistd.h>
-#include <string.h>
-#include <vortex.h>
 #include "common.h"
 #include <assert.h>
+#include <iostream>
 #include <limits>
 #include <math.h>
+#include <string.h>
+#include <unistd.h>
 #include <vector>
+#include <vortex.h>
 
-#define RT_CHECK(_expr)                                         \
-   do {                                                         \
-     int _ret = _expr;                                          \
-     if (0 == _ret)                                             \
-       break;                                                   \
-     printf("Error: '%s' returned %d!\n", #_expr, (int)_ret);   \
-	 cleanup();			                                              \
-     exit(-1);                                                  \
-   } while (false)
+#include "host_accelerator_interface.hpp"
+#include "simx_backend.hpp"
+#include "spinner.hpp"
+
+#define RT_CHECK(_expr)                                      \
+  do {                                                       \
+    int _ret = _expr;                                        \
+    if (0 == _ret)                                           \
+      break;                                                 \
+    printf("Error: '%s' returned %d!\n", #_expr, (int)_ret); \
+    cleanup();                                               \
+    exit(-1);                                                \
+  } while (false)
 
 ///////////////////////////////////////////////////////////////////////////////
 
 union Float_t {
-    float f;
-    int   i;
-    struct {
-        uint32_t man  : 23;
-        uint32_t exp  : 8;
-        uint32_t sign : 1;
-    } parts;
+  float f;
+  int i;
+  struct {
+    uint32_t man : 23;
+    uint32_t exp : 8;
+    uint32_t sign : 1;
+  } parts;
 };
 
 inline float fround(float x, int32_t precision = 8) {
@@ -65,7 +69,7 @@ inline bool almost_equal(float a, float b) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const char* kernel_file = "kernel.vxbin";
+const char *kernel_file = "kernel.vxbin";
 uint32_t count = 0;
 
 vx_device_h device = nullptr;
@@ -77,8 +81,8 @@ vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
 
 static void show_usage() {
-   std::cout << "Vortex Test." << std::endl;
-   std::cout << "Usage: [-k: kernel] [-n words] [-h: help]" << std::endl;
+  std::cout << "Vortex Test." << std::endl;
+  std::cout << "Usage: [-k: kernel] [-n words] [-h: help]" << std::endl;
 }
 
 static void parse_args(int argc, char **argv) {
@@ -113,8 +117,8 @@ void cleanup() {
   }
 }
 
-void gen_src_data(std::vector<float>& test_data,
-                  std::vector<uint32_t>& addr_table,
+void gen_src_data(std::vector<float> &test_data,
+                  std::vector<uint32_t> &addr_table,
                   uint32_t num_points,
                   uint32_t num_addrs) {
   test_data.resize(num_points);
@@ -144,21 +148,23 @@ int main(int argc, char *argv[]) {
   std::srand(50);
 
   // open device connection
+  std::cout << "========== We are using espiral ==========" << std::endl;
   std::cout << "open device connection" << std::endl;
-  RT_CHECK(vx_dev_open(&device));
+  espiral::HostAcceleratorInterface *dev = new espiral::SimXDevice();
+  espiral::Spinner spinner(dev);
 
   uint64_t num_cores, num_warps, num_threads;
-  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_CORES, &num_cores));
-  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_WARPS, &num_warps));
-  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_THREADS, &num_threads));
+  num_cores = dev->get_caps(VX_CAPS_NUM_CORES).value();
+  num_warps = dev->get_caps(VX_CAPS_NUM_WARPS).value();
+  num_threads = dev->get_caps(VX_CAPS_NUM_THREADS).value();
 
   uint32_t total_threads = num_cores * num_warps * num_threads;
   uint32_t num_points = count * total_threads;
   uint32_t num_addrs = num_points + NUM_LOADS - 1;
 
   uint32_t addr_buf_size = num_addrs * sizeof(int32_t);
-  uint32_t src_buf_size  = num_points * sizeof(int32_t);
-  uint32_t dst_buf_size  = num_points * sizeof(int32_t);
+  uint32_t src_buf_size = num_points * sizeof(int32_t);
+  uint32_t dst_buf_size = num_points * sizeof(int32_t);
 
   std::cout << "number of points: " << num_points << std::endl;
   std::cout << "addr buffer size: " << addr_buf_size << " bytes" << std::endl;
@@ -168,18 +174,21 @@ int main(int argc, char *argv[]) {
   kernel_arg.num_tasks = total_threads;
   kernel_arg.stride = count;
 
+  // create kernel
+  const auto kid = spinner.allocate_kernel(kernel_file);
+
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;
-  RT_CHECK(vx_mem_alloc(device, addr_buf_size, VX_MEM_READ, &src0_buffer));
-  RT_CHECK(vx_mem_address(src0_buffer, &kernel_arg.src0_addr));
-  RT_CHECK(vx_mem_alloc(device, src_buf_size, VX_MEM_READ, &src1_buffer));
-  RT_CHECK(vx_mem_address(src1_buffer, &kernel_arg.src1_addr));
-  RT_CHECK(vx_mem_alloc(device, dst_buf_size, VX_MEM_WRITE, &dst_buffer));
-  RT_CHECK(vx_mem_address(dst_buffer, &kernel_arg.dst_addr));
+  auto src0_buf = spinner.allocate_upload_buffer(kid, addr_buf_size);
+  auto src1_buf = spinner.allocate_upload_buffer(kid, src_buf_size);
+  auto dst_buf_devaddr = spinner.allocate_dev_buffer(kid, dst_buf_size);
+  kernel_arg.src0_addr = src0_buf.get_va();
+  kernel_arg.src1_addr = src1_buf.get_va();
+  kernel_arg.dst_addr = dst_buf_devaddr;
 
   std::cout << "dev_addr=0x" << std::hex << kernel_arg.src0_addr << std::endl;
-  std::cout << "dev_src=0x"  << std::hex << kernel_arg.src1_addr << std::endl;
-  std::cout << "dev_dst=0x"  << std::hex << kernel_arg.dst_addr << std::endl;
+  std::cout << "dev_src=0x" << std::hex << kernel_arg.src1_addr << std::endl;
+  std::cout << "dev_dst=0x" << std::hex << kernel_arg.dst_addr << std::endl;
 
   // allocate host buffers
   std::cout << "allocate host buffers" << std::endl;
@@ -190,31 +199,30 @@ int main(int argc, char *argv[]) {
 
   // upload source buffer0
   std::cout << "upload address buffer" << std::endl;
-  RT_CHECK(vx_copy_to_dev(src0_buffer, h_addr.data(), 0, addr_buf_size));
+  src0_buf.set_content(h_addr.data(), addr_buf_size);
+  spinner.upload(kid, src0_buf);
 
   // upload source buffer1
   std::cout << "upload source buffer" << std::endl;
-  RT_CHECK(vx_copy_to_dev(src1_buffer, h_src.data(), 0, src_buf_size));
-
-  // Upload kernel binary
-  std::cout << "Upload kernel binary" << std::endl;
-  RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
+  src1_buf.set_content(h_src.data(), src_buf_size);
+  spinner.upload(kid, src1_buf);
 
   // upload kernel argument
   std::cout << "upload kernel argument" << std::endl;
-  RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
+  spinner.upload_args<kernel_arg_t>(kid, &kernel_arg);
 
   // start device
   std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
+  spinner.start_kernel(kid);
 
   // wait for completion
   std::cout << "wait for completion" << std::endl;
-  RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
-
+  spinner.wait_kernel(kid, VX_MAX_TIMEOUT);
+  
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;
-  RT_CHECK(vx_copy_from_dev(h_dst.data(), dst_buffer, 0, dst_buf_size));
+  espiral::DownloadBuffer dst_download_buf(dst_buf_devaddr, dst_buf_size, h_dst.data());
+  spinner.download(kid, dst_download_buf);
 
   // verify result
   std::cout << "verify result" << std::endl;
@@ -225,7 +233,7 @@ int main(int argc, char *argv[]) {
       uint32_t addr = i + j;
       uint32_t index = h_addr[addr];
       float value = h_src[index];
-      //printf("*** [%d] addr=%d, index=%d, value=%f\n", i, addr, index, value);
+      // printf("*** [%d] addr=%d, index=%d, value=%f\n", i, addr, index, value);
       ref *= value;
     }
 
@@ -239,6 +247,7 @@ int main(int argc, char *argv[]) {
 
   // cleanup
   std::cout << "cleanup" << std::endl;
+  spinner.free_kernel(kid);
   cleanup();
 
   if (errors != 0) {
