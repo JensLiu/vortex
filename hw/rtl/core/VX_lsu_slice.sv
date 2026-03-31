@@ -21,6 +21,9 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     input wire              clk,
     input wire              reset,
 
+    // Address Translation Interface
+    VX_addr_translation_if.master addr_translation_if[`NUM_LSU_LANES],
+
     // Inputs
     VX_execute_if.slave     execute_if,
 

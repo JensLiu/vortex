@@ -16,3 +16,6 @@
 [submodule "hw/rtl/mmu/bsc_mmu"]
 	path = hw/rtl/mmu/bsc_mmu
 	url = git@github.com:JensLiu/mmu.git
+[submodule "runtime/espiral"]
+	path = runtime/espiral
+	url = git@github.com:JensLiu/espiral.git
