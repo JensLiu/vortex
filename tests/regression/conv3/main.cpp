@@ -6,18 +6,9 @@
 #include <vortex.h>
 #include <cmath>
 #include "common.h"
+#include "espiral.h"
 
 #define FLOAT_ULP 6
-
-#define RT_CHECK(_expr)                                         \
-   do {                                                         \
-     int _ret = _expr;                                          \
-     if (0 == _ret)                                             \
-       break;                                                   \
-     printf("Error: '%s' returned %d!\n", #_expr, (int)_ret);   \
-	 cleanup();			                                              \
-     exit(-1);                                                  \
-   } while (false)
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -150,7 +141,8 @@ int main(int argc, char *argv[]) {
 
   // open device connection
   std::cout << "open device connection" << std::endl;
-  RT_CHECK(vx_dev_open(&device));
+  espiral::Espiral espiral(espiral::backend::SIMX);
+  const auto kid = espiral.allocate_kernel(kernel_file);
 
   std::cout << "data type: " << Comparator<TYPE>::type_str() << std::endl;
   std::cout << "matrix size: " << size << "x" << size << std::endl;
@@ -169,16 +161,16 @@ int main(int argc, char *argv[]) {
   size_t i_nbytes = i_points * sizeof(TYPE);
   size_t w_nbytes = w_points * sizeof(TYPE);
   size_t o_nbytes = o_points * sizeof(TYPE);
-  RT_CHECK(vx_mem_alloc(device, i_nbytes, VX_MEM_READ, &I_buffer));
-  RT_CHECK(vx_mem_address(I_buffer, &kernel_arg.I_addr));
-  RT_CHECK(vx_mem_alloc(device, w_nbytes, VX_MEM_READ, &W_buffer));
-  RT_CHECK(vx_mem_address(W_buffer, &kernel_arg.W_addr));
-  RT_CHECK(vx_mem_alloc(device, o_nbytes, VX_MEM_WRITE, &O_buffer));
-  RT_CHECK(vx_mem_address(O_buffer, &kernel_arg.O_addr));
+  auto src0_buf = espiral.allocate_upload_buffer(kid, i_nbytes);
+  auto src1_buf = espiral.allocate_upload_buffer(kid, w_nbytes);
+  const auto dst_buf_devaddr = espiral.allocate_dev_buffer(kid, o_nbytes);
+  kernel_arg.I_addr = src0_buf.get_va();
+  kernel_arg.W_addr = src1_buf.get_va();
+  kernel_arg.O_addr = dst_buf_devaddr;
 
   if (use_lmem) {
     uint64_t dev_local_mem_size;
-    RT_CHECK(vx_dev_caps(device, VX_CAPS_LOCAL_MEM_SIZE, &dev_local_mem_size));
+    const auto local_mem_size = espiral.get_caps(VX_CAPS_LOCAL_MEM_SIZE).value();
     if (w_nbytes > dev_local_mem_size) {
       std::cout << "Error: Not enough local memory: needed=" << w_nbytes << ", available=" << dev_local_mem_size << std::endl;
       cleanup();
@@ -210,32 +202,30 @@ int main(int argc, char *argv[]) {
   // upload input buffer
   {
     std::cout << "upload source buffer" << std::endl;
-    RT_CHECK(vx_copy_to_dev(I_buffer, h_I.data(), 0, i_nbytes));
+    src0_buf.set_content(h_I.data(), i_nbytes);
+    espiral.upload(kid, src0_buf);
   }
 
   // upload weight buffer
   {
     std::cout << "upload weight buffer" << std::endl;
-    RT_CHECK(vx_copy_to_dev(W_buffer, h_W.data(), 0, w_nbytes));
+    src1_buf.set_content(h_W.data(), w_nbytes);
+    espiral.upload(kid, src1_buf);
   }
-
-  // Upload kernel binary
-  std::cout << "Upload kernel binary" << std::endl;
-  RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
 
   // upload kernel argument
   std::cout << "upload kernel argument" << std::endl;
-  RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
+  espiral.upload_args<kernel_arg_t>(kid, &kernel_arg);
 
   auto time_start = std::chrono::high_resolution_clock::now();
 
   // start device
   std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
+  espiral.start_kernel(kid);
 
   // wait for completion
   std::cout << "wait for completion" << std::endl;
-  RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
+  espiral.wait_kernel(kid, VX_MAX_TIMEOUT);
 
   auto time_end = std::chrono::high_resolution_clock::now();
   double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count();
@@ -243,7 +233,8 @@ int main(int argc, char *argv[]) {
 
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;
-  RT_CHECK(vx_copy_from_dev(h_O.data(), O_buffer, 0, o_nbytes));
+  espiral::DownloadBuffer dst_download_buf(dst_buf_devaddr, o_nbytes, h_O.data());
+  espiral.download(kid, dst_download_buf);
 
   // verify result
   std::cout << "verify result" << std::endl;
@@ -263,6 +254,7 @@ int main(int argc, char *argv[]) {
 
   // cleanup
   std::cout << "cleanup" << std::endl;
+  espiral.free_kernel(kid);
   cleanup();
 
   if (errors != 0) {

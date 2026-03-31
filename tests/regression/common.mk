@@ -66,17 +66,11 @@ CXXFLAGS += $(CONFIGS)
 LDFLAGS += -L$(VORTEX_RT_PATH) -lvortex
 
 CXXFLAGS += -pthread
-# Must match libsimx: espiral SimXDevice gates set_satp_by_addr on VM_ENABLE; without it
-# the MMU never sees the guest SATP and fetches see poison (e.g. 0xbaadf00d).
-CXXFLAGS += -DVM_ENABLE
 CXXFLAGS += -I$(VORTEX_HOME)/runtime/espiral \
-            -I$(VORTEX_HOME)/runtime/espiral/includes \
-            -I$(VORTEX_HOME)/runtime/espiral/mm \
-            -I$(VORTEX_HOME)/runtime/espiral/backend \
-            -I$(VORTEX_HOME)/runtime/common \
-            -I$(VORTEX_HOME)/sim \
-			-I$(VORTEX_HOME)/sim/simx
-LDFLAGS += -lsimx -Wl,-rpath,$(VORTEX_RT_PATH)
+            -I$(VORTEX_HOME)/runtime/espiral/includes
+# libespiral.so references backend driver symbols; explicitly link them so
+# modern linkers don't require --copy-dt-needed-entries.
+LDFLAGS += -lespiral -lsimx -lrtlsim -Wl,-rpath,$(VORTEX_RT_PATH)
 
 
 # Debugging
@@ -109,7 +103,12 @@ kernel.vxbin: kernel.elf
 kernel.elf: $(VX_SRCS)
 	$(VX_CXX) $(VX_CFLAGS) $^ $(VX_LDFLAGS) -o kernel.elf
 
-$(PROJECT): $(SRCS)
+ESPIRAL_LIB := $(VORTEX_RT_PATH)/libespiral.so
+
+$(ESPIRAL_LIB):
+	$(MAKE) -C $(VORTEX_HOME)/runtime/espiral lib DESTDIR=$(VORTEX_RT_PATH)
+
+$(PROJECT): $(SRCS) $(ESPIRAL_LIB)
 	$(CXX) $(CXXFLAGS) $(SRCS) $(LDFLAGS) -o $@
 
 run-simx: $(PROJECT) kernel.vxbin

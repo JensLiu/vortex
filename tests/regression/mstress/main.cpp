@@ -8,9 +8,7 @@
 #include <vector>
 #include <vortex.h>
 
-#include "host_accelerator_interface.hpp"
-#include "simx_backend.hpp"
-#include "spinner.hpp"
+#include "espiral.h"
 
 #define RT_CHECK(_expr)                                      \
   do {                                                       \
@@ -150,13 +148,12 @@ int main(int argc, char *argv[]) {
   // open device connection
   std::cout << "========== We are using espiral ==========" << std::endl;
   std::cout << "open device connection" << std::endl;
-  espiral::HostAcceleratorInterface *dev = new espiral::SimXDevice();
-  espiral::Spinner spinner(dev);
+  espiral::Espiral espiral(espiral::backend::SIMX);
 
   uint64_t num_cores, num_warps, num_threads;
-  num_cores = dev->get_caps(VX_CAPS_NUM_CORES).value();
-  num_warps = dev->get_caps(VX_CAPS_NUM_WARPS).value();
-  num_threads = dev->get_caps(VX_CAPS_NUM_THREADS).value();
+  num_cores = espiral.get_caps(VX_CAPS_NUM_CORES).value();
+  num_warps = espiral.get_caps(VX_CAPS_NUM_WARPS).value();
+  num_threads = espiral.get_caps(VX_CAPS_NUM_THREADS).value();
 
   uint32_t total_threads = num_cores * num_warps * num_threads;
   uint32_t num_points = count * total_threads;
@@ -175,13 +172,13 @@ int main(int argc, char *argv[]) {
   kernel_arg.stride = count;
 
   // create kernel
-  const auto kid = spinner.allocate_kernel(kernel_file);
+  const auto kid = espiral.allocate_kernel(kernel_file);
 
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;
-  auto src0_buf = spinner.allocate_upload_buffer(kid, addr_buf_size);
-  auto src1_buf = spinner.allocate_upload_buffer(kid, src_buf_size);
-  auto dst_buf_devaddr = spinner.allocate_dev_buffer(kid, dst_buf_size);
+  auto src0_buf = espiral.allocate_upload_buffer(kid, addr_buf_size);
+  auto src1_buf = espiral.allocate_upload_buffer(kid, src_buf_size);
+  auto dst_buf_devaddr = espiral.allocate_dev_buffer(kid, dst_buf_size);
   kernel_arg.src0_addr = src0_buf.get_va();
   kernel_arg.src1_addr = src1_buf.get_va();
   kernel_arg.dst_addr = dst_buf_devaddr;
@@ -200,29 +197,29 @@ int main(int argc, char *argv[]) {
   // upload source buffer0
   std::cout << "upload address buffer" << std::endl;
   src0_buf.set_content(h_addr.data(), addr_buf_size);
-  spinner.upload(kid, src0_buf);
+  espiral.upload(kid, src0_buf);
 
   // upload source buffer1
   std::cout << "upload source buffer" << std::endl;
   src1_buf.set_content(h_src.data(), src_buf_size);
-  spinner.upload(kid, src1_buf);
+  espiral.upload(kid, src1_buf);
 
   // upload kernel argument
   std::cout << "upload kernel argument" << std::endl;
-  spinner.upload_args<kernel_arg_t>(kid, &kernel_arg);
+  espiral.upload_args<kernel_arg_t>(kid, &kernel_arg);
 
   // start device
   std::cout << "start device" << std::endl;
-  spinner.start_kernel(kid);
+  espiral.start_kernel(kid);
 
   // wait for completion
   std::cout << "wait for completion" << std::endl;
-  spinner.wait_kernel(kid, VX_MAX_TIMEOUT);
-  
+  espiral.wait_kernel(kid, VX_MAX_TIMEOUT);
+
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;
   espiral::DownloadBuffer dst_download_buf(dst_buf_devaddr, dst_buf_size, h_dst.data());
-  spinner.download(kid, dst_download_buf);
+  espiral.download(kid, dst_download_buf);
 
   // verify result
   std::cout << "verify result" << std::endl;
@@ -247,7 +244,7 @@ int main(int argc, char *argv[]) {
 
   // cleanup
   std::cout << "cleanup" << std::endl;
-  spinner.free_kernel(kid);
+  espiral.free_kernel(kid);
   cleanup();
 
   if (errors != 0) {

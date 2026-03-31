@@ -5,6 +5,8 @@
 #define TYPE float
 #endif
 
+#include <cstdint>
+
 typedef struct {
   uint32_t grid_dim[2];
   uint32_t width;
