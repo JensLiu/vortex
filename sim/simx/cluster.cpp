@@ -15,9 +15,11 @@
 
 using namespace vortex;
 
+namespace vortex {
+
 Cluster::Cluster(const SimContext& ctx,
                  uint32_t cluster_id,
-                 ProcessorImpl* processor,
+                 simx::ProcessorImpl* processor,
                  const Arch &arch,
                  const DCRS &dcrs)
   : SimObject(ctx, StrFormat("cluster%d", cluster_id))
@@ -150,3 +152,4 @@ Cluster::PerfStats Cluster::perf_stats() const {
   perf_stats.l2cache = l2cache_->perf_stats();
   return perf_stats;
 }
+} // namespace vortex

@@ -20,6 +20,7 @@
 #include "cluster.h"
 
 namespace vortex {
+namespace simx {
 
 class ProcessorImpl {
 public:
@@ -51,7 +52,7 @@ private:
   void reset();
 
   const Arch& arch_;
-  std::vector<std::shared_ptr<Cluster>> clusters_;
+  std::vector<std::shared_ptr<vortex::Cluster>> clusters_;
   DCRS dcrs_;
   MemSim::Ptr memsim_;
   CacheSim::Ptr l3cache_;
@@ -61,4 +62,5 @@ private:
   uint64_t perf_mem_pending_reads_;
 };
 
-}
+} // namespace simx
+} // namespace vortex

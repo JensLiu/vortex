@@ -15,7 +15,7 @@
 
 #include <mem.h>
 #include <util.h>
-#include <processor.h>
+#include <rtlsim/processor.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -253,7 +253,7 @@ public:
 private:
 
   RAM                 ram_;
-  Processor           processor_;
+  rtlsim::Processor   processor_;
   MemoryAllocator     global_mem_;
   DeviceConfig        dcrs_;
   std::future<void>   future_;

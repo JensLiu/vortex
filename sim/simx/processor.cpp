@@ -13,8 +13,10 @@
 
 #include "processor.h"
 #include "processor_impl.h"
+#include "mem.h"
 
 using namespace vortex;
+using namespace vortex::simx;
 
 ProcessorImpl::ProcessorImpl(const Arch& arch)
   : arch_(arch)
@@ -161,7 +163,7 @@ ProcessorImpl::PerfStats ProcessorImpl::perf_stats() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Processor::Processor(const Arch& arch)
+simx::Processor::Processor(const Arch& arch)
   : impl_(new ProcessorImpl(arch))
 {
 #ifdef VM_ENABLE
@@ -169,7 +171,7 @@ Processor::Processor(const Arch& arch)
 #endif
 }
 
-Processor::~Processor() {
+simx::Processor::~Processor() {
   delete impl_;
 #ifdef VM_ENABLE
   if (satp_ != NULL)
@@ -177,11 +179,11 @@ Processor::~Processor() {
 #endif
 }
 
-void Processor::attach_ram(RAM* mem) {
+void simx::Processor::attach_ram(vortex::RAM* mem) {
   impl_->attach_ram(mem);
 }
 
-int Processor::run() {
+int simx::Processor::run() {
   try {
     return impl_->run();
   } catch (const std::exception& e) {
@@ -192,28 +194,28 @@ int Processor::run() {
   return -1;
 }
 
-void Processor::dcr_write(uint32_t addr, uint32_t value) {
+void simx::Processor::dcr_write(uint32_t addr, uint32_t value) {
   return impl_->dcr_write(addr, value);
 }
 
 #ifdef VM_ENABLE
-int16_t Processor::set_satp_by_addr(uint64_t base_addr) {
+int16_t simx::Processor::set_satp_by_addr(uint64_t base_addr) {
   uint16_t asid = 0;
-  satp_ = new SATP_t (base_addr,asid);
+  satp_ = new SATP_t (base_addr, asid);
   if (satp_ == NULL)
     return 1;
   uint64_t satp = satp_->get_satp();
   impl_->set_satp(satp);
   return 0;
 }
-bool Processor::is_satp_unset() {
+bool simx::Processor::is_satp_unset() {
   return (satp_== NULL);
 }
-uint8_t Processor::get_satp_mode() {
+uint8_t simx::Processor::get_satp_mode() {
   assert (satp_!=NULL);
   return satp_->get_mode();
 }
-uint64_t Processor::get_base_ppn() {
+uint64_t simx::Processor::get_base_ppn() {
   assert (satp_!=NULL);
   return satp_->get_base_ppn();
 }

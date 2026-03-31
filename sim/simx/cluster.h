@@ -23,8 +23,9 @@
 #include "constants.h"
 
 namespace vortex {
-
+namespace simx {
 class ProcessorImpl;
+}
 
 class Cluster : public SimObject<Cluster> {
 public:
@@ -37,7 +38,7 @@ public:
 
   Cluster(const SimContext& ctx,
           uint32_t cluster_id,
-          ProcessorImpl* processor,
+          simx::ProcessorImpl* processor,
           const Arch &arch,
           const DCRS &dcrs);
 
@@ -47,7 +48,7 @@ public:
     return cluster_id_;
   }
 
-  ProcessorImpl* processor() const {
+  simx::ProcessorImpl* processor() const {
     return processor_;
   }
 
@@ -71,11 +72,10 @@ public:
 
 private:
   uint32_t                    cluster_id_;
-  ProcessorImpl*              processor_;
+  simx::ProcessorImpl*        processor_;
   std::vector<Socket::Ptr>    sockets_;
   std::vector<CoreMask>       barriers_;
   CacheSim::Ptr               l2cache_;
   uint32_t                    cores_per_socket_;
 };
-
 } // namespace vortex

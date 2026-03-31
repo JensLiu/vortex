@@ -13,25 +13,25 @@
 
 #pragma once
 
-#include <stdint.h>
+#include <simx/arch.h>
 #include <VX_config.h>
 #include <mem.h>
+#include <stdint.h>
 
 namespace vortex {
-
-class Arch;
 class RAM;
-class ProcessorImpl;
 #ifdef VM_ENABLE
-class SATP_t;
+class SATP_t; // defined in sim/common/mem.h
 #endif
+namespace simx {
+class ProcessorImpl;
 
 class Processor {
 public:
-  Processor(const Arch& arch);
+  Processor(const vortex::Arch &arch);
   ~Processor();
 
-  void attach_ram(RAM* mem);
+  void attach_ram(vortex::RAM *mem);
 
   int run();
 
@@ -44,10 +44,10 @@ public:
 #endif
 
 private:
-  ProcessorImpl* impl_;
+  ProcessorImpl *impl_;
 #ifdef VM_ENABLE
-  SATP_t *satp_;
+  ::vortex::SATP_t *satp_;
 #endif
 };
-
-}
+} // namespace simx
+} // namespace vortex

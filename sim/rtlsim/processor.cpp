@@ -35,6 +35,9 @@
 #include <dram_sim.h>
 #include <util.h>
 
+namespace vortex {
+namespace rtlsim {
+
 #ifndef MEM_CLOCK_RATIO
 #define MEM_CLOCK_RATIO 1
 #endif
@@ -430,4 +433,17 @@ void Processor::run() {
 
 void Processor::dcr_write(uint32_t addr, uint32_t value) {
   return impl_->dcr_write(addr, value);
+}
+
+} // namespace rtlsim
+} // namespace vortex
+
+// Verilator-generated code (and some runtime users) expect these helpers in the
+// global namespace. Keep them as thin wrappers.
+bool sim_trace_enabled() {
+  return vortex::rtlsim::sim_trace_enabled();
+}
+
+void sim_trace_enable(bool enable) {
+  vortex::rtlsim::sim_trace_enable(enable);
 }

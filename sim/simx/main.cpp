@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
     RAM ram(0, MEM_PAGE_SIZE);
 
     // create processor
-    Processor processor(arch);
+    simx::Processor processor(arch);
 
     // attach memory module
     processor.attach_ram(&ram);

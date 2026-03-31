@@ -6,7 +6,8 @@ CONFIG_FILE := $(DESTDIR)/rtlsim_rt_config.stamp
 SRC_DIR := $(VORTEX_HOME)/runtime/rtlsim
 
 CXXFLAGS += -std=c++17 -Wall -Wextra -pedantic -Wfatal-errors
-CXXFLAGS += -I$(INC_DIR) -I$(ROOT_DIR)/hw -I$(SIM_DIR)/rtlsim -I$(SW_COMMON_DIR) -I$(RT_COMMON_DIR)
+# Add $(SIM_DIR) so <rtlsim/...> headers resolve (not just <...>).
+CXXFLAGS += -I$(INC_DIR) -I$(ROOT_DIR)/hw -I$(SIM_DIR) -I$(SIM_DIR)/rtlsim -I$(SW_COMMON_DIR) -I$(RT_COMMON_DIR)
 CXXFLAGS += -DXLEN_$(XLEN)
 
 # Position independent code

@@ -16,25 +16,23 @@
 #include <stdint.h>
 
 namespace vortex {
-
 class RAM;
+namespace rtlsim {
 
 class Processor {
 public:
-
   Processor();
   ~Processor();
 
-  void attach_ram(RAM* ram);
+  void attach_ram(vortex::RAM *ram);
 
   void run();
 
   void dcr_write(uint32_t addr, uint32_t value);
 
 private:
-
   class Impl;
-  Impl* impl_;
+  Impl *impl_;
 };
-
-}
+} // namespace rtlsim
+} // namespace vortex

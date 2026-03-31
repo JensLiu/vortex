@@ -608,7 +608,7 @@ public:
 private:
   Arch arch_;
   RAM ram_;
-  Processor processor_;
+  simx::Processor processor_;
   MemoryAllocator global_mem_;
   DeviceConfig dcrs_;
   std::future<void> future_;
