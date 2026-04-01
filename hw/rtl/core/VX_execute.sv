@@ -29,6 +29,9 @@ module VX_execute import VX_gpu_pkg::*; #(
 
     input base_dcrs_t       base_dcrs,
 
+    // Address Translation Interface
+    VX_addr_trans_if.master addr_trans_if[`NUM_LSU_LANES * `NUM_LSU_BLOCKS],
+
     // Dcache interface
     VX_lsu_mem_if.master    lsu_mem_if [`NUM_LSU_BLOCKS],
 
@@ -69,6 +72,7 @@ module VX_execute import VX_gpu_pkg::*; #(
         `SCOPE_IO_BIND  (0)
         .clk            (clk),
         .reset          (reset),
+        .addr_trans_if   (addr_trans_if),
         .dispatch_if    (dispatch_if[EX_LSU * `ISSUE_WIDTH +: `ISSUE_WIDTH]),
         .commit_if      (commit_if[EX_LSU * `ISSUE_WIDTH +: `ISSUE_WIDTH]),
         .lsu_mem_if     (lsu_mem_if)

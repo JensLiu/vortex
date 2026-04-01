@@ -39,6 +39,10 @@ module VX_dcr_data import VX_gpu_pkg::*; (
         `ifdef XLEN_64
             `VX_DCR_BASE_STARTUP_ARG1 : dcrs.startup_arg[63:32] <= dcr_bus_if.write_data;
         `endif
+            `VX_DCR_BASE_SATP_BASE_ADDR0 : dcrs.satp[31:0] <= dcr_bus_if.write_data;
+        `ifdef XLEN_64
+            `VX_DCR_BASE_SATP_BASE_ADDR1 : dcrs.satp[63:32] <= dcr_bus_if.write_data;
+        `endif
             `VX_DCR_BASE_MPM_CLASS : dcrs.mpm_class <= dcr_bus_if.write_data[7:0];
             default:;
             endcase

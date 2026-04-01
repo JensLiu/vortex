@@ -61,6 +61,18 @@ ifneq (,$(findstring -DEXT_TCU_ENABLE, $(CONFIGS)))
 	RTL_PKGS += $(THIRD_PARTY_DIR)/hardfloat/source/recFNToRecFN.v
 endif
 
+# Add VM implementation sources
+ifneq (,$(findstring -DVM_ENABLE, $(CONFIGS)))
+    MMU_DIR = $(RTL_DIR)/mmu
+	RTL_INCLUDE += -I$(MMU_DIR)
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/includes
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/tlb
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/ptw
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/common
+	RTL_PKGS += $(MMU_DIR)/bsc_mmu/includes/mmu_pkg.sv
+endif
+
 RTL_PKGS += $(RTL_DIR)/VX_trace_pkg.sv
 
 SRCS = $(SW_COMMON_DIR)/util.cpp $(SW_COMMON_DIR)/mem.cpp $(SW_COMMON_DIR)/softfloat_ext.cpp $(SW_COMMON_DIR)/rvfloats.cpp $(SW_COMMON_DIR)/dram_sim.cpp

@@ -22,7 +22,7 @@ module VX_lsu_unit import VX_gpu_pkg::*; #(
     input wire              reset,
 
     // Address Translation Interface
-    VX_addr_translation_if.master addr_translation_if[`NUM_LSU_LANES * `NUM_LSU_BLOCKS],
+    VX_addr_trans_if.master addr_trans_if[`NUM_LSU_LANES * `NUM_LSU_BLOCKS],
 
     // Inputs
     VX_dispatch_if.slave    dispatch_if [`ISSUE_WIDTH],
@@ -62,7 +62,7 @@ module VX_lsu_unit import VX_gpu_pkg::*; #(
             `SCOPE_IO_BIND  (block_idx)
             .clk        (clk),
             .reset      (reset),
-            .addr_translation_if (addr_translation_if[block_idx * NUM_LANES +: NUM_LANES]),
+            .addr_trans_if (addr_trans_if[block_idx * NUM_LANES +: NUM_LANES]),
             .execute_if (per_block_execute_if[block_idx]),
             .result_if  (per_block_result_if[block_idx]),
             .lsu_mem_if (lsu_mem_if[block_idx])

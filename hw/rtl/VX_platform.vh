@@ -84,7 +84,11 @@
                               /* verilator lint_off IMPORTSTAR */ \
                               /* verilator lint_off UNSIGNED */ \
                               /* verilator lint_off CMPCONST */ \
-                              /* verilator lint_off SYMRSVDWORD */
+                              /* verilator lint_off SYMRSVDWORD */ \
+                              /* verilator lint_off UNUSEDPARAM */ \
+                              /* verilator lint_off UNUSEDSIGNAL */ \
+                              /* verilator lint_off WIDTHEXPAND */ \
+                              /* verilator lint_off CASEINCOMPLETE */
 
 `define IGNORE_WARNINGS_END   /* verilator lint_on UNUSED */ \
                               /* verilator lint_on PINCONNECTEMPTY */ \
@@ -97,7 +101,11 @@
                               /* verilator lint_on IMPORTSTAR */ \
                               /* verilator lint_on UNSIGNED */ \
                               /* verilator lint_on CMPCONST */ \
-                              /* verilator lint_on SYMRSVDWORD */
+                              /* verilator lint_on SYMRSVDWORD */ \
+                              /* verilator lint_on UNUSEDPARAM */ \
+                              /* verilator lint_on UNUSEDSIGNAL */ \
+                              /* verilator lint_on WIDTHEXPAND */ \
+                              /* verilator lint_on CASEINCOMPLETE */
 
 `define UNUSED_PARAM(x)  /* verilator lint_off UNUSED */ \
                          localparam  __``x = x; \

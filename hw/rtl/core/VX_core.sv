@@ -33,7 +33,7 @@ module VX_core import VX_gpu_pkg::*; #(
 
     VX_dcr_bus_if.slave     dcr_bus_if,
 
-    VX_mem_bus_if.master    dcache_bus_if [DCACHE_NUM_REQS],
+    VX_mem_bus_if.master    dcache_bus_if [DCACHE_NUM_REQS],    // < after ClientID injection and LSU/PTW multiplexing
 
     VX_mem_bus_if.master    icache_bus_if,
 
@@ -64,6 +64,60 @@ module VX_core import VX_gpu_pkg::*; #(
         .DATA_SIZE (LSU_WORD_SIZE),
         .TAG_WIDTH (LSU_TAG_WIDTH)
     ) lsu_mem_if[`NUM_LSU_BLOCKS]();
+
+    // VM Interfaces
+    localparam int unsigned NUM_DTLB_PORTS = `NUM_LSU_BLOCKS * `NUM_LSU_LANES;
+    VX_addr_trans_if #(
+        .ADDR_WIDTH (`XLEN)
+    ) iaddr_trans_if();
+
+    VX_addr_trans_if #(
+        .ADDR_WIDTH (`XLEN)
+    ) daddr_trans_if[NUM_DTLB_PORTS]();
+
+    VX_csr_mmu_if #(
+        .SATP_WIDTH (`XLEN),
+        .MSTATUS_WIDTH (`XLEN)
+    ) csr_mmu_if();
+    assign csr_mmu_if.satp      = base_dcrs.satp;
+    assign csr_mmu_if.flush_tlb = '0;  // TODO T10: wire flush from DCR
+    assign csr_mmu_if.mstatus   = '0;  // always user mode for GPU
+
+    // Before ClientID injection
+    VX_mem_bus_if #(
+        .DATA_SIZE (DCACHE_WORD_SIZE),
+        .TAG_WIDTH (DCACHE_TAG_WIDTH) // <TagId>
+    ) mmu_dcache_if[DCACHE_NUM_PTW_REQS]();
+
+    VX_mem_bus_if #(
+        .DATA_SIZE (DCACHE_WORD_SIZE),
+        .TAG_WIDTH (DCACHE_TAG_WIDTH)   // <TagId>
+    ) lsu_mem_unit_if[DCACHE_NUM_LSU_REQS]();
+
+    VX_bsc_mmu #(
+        .NUM_DTLB_PORTS(NUM_DTLB_PORTS),
+        .NUM_PTW_PORTS(DCACHE_NUM_PTW_REQS)
+    ) bsc_mmu (
+        .clk (clk),
+        .reset(reset),
+        .iaddr_if(iaddr_trans_if),
+        .daddr_if(daddr_trans_if),
+        .csr_mmu_if(csr_mmu_if),
+        .dcache_bus_if(mmu_dcache_if)
+    );
+
+    // ClientID injector and LSU/PTW request multiplexer
+    VX_dcache_req_hub #(
+        .NUM_LSU_REQS(DCACHE_NUM_LSU_REQS),
+        .NUM_PTW_REQS(DCACHE_NUM_PTW_REQS)
+    ) dcache_req_hub (
+        .clk (clk),
+        .reset (reset),
+        .lsu_mem_if(lsu_mem_unit_if),
+        .ptw_mem_if(mmu_dcache_if),
+        .client_mem_if(dcache_bus_if)
+    );
+
 
 `ifdef PERF_ENABLE
     lmem_perf_t lmem_perf;
@@ -124,6 +178,7 @@ module VX_core import VX_gpu_pkg::*; #(
         .clk            (clk),
         .reset          (reset),
         .icache_bus_if  (icache_bus_if),
+        .addr_trans_if  (iaddr_trans_if),
         .schedule_if    (schedule_if),
         .fetch_if       (fetch_if)
     );
@@ -172,6 +227,7 @@ module VX_core import VX_gpu_pkg::*; #(
 
         .base_dcrs      (base_dcrs),
 
+        .addr_trans_if  (daddr_trans_if),
         .lsu_mem_if     (lsu_mem_if),
 
         .dispatch_if    (dispatch_if),
@@ -208,7 +264,7 @@ module VX_core import VX_gpu_pkg::*; #(
         .coalescer_perf(coalescer_perf),
     `endif
         .lsu_mem_if    (lsu_mem_if),
-        .dcache_bus_if (dcache_bus_if)
+        .dcache_bus_if (lsu_mem_unit_if)
     );
 
 `ifdef PERF_ENABLE

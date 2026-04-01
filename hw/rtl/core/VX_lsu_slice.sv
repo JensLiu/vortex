@@ -22,7 +22,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     input wire              reset,
 
     // Address Translation Interface
-    VX_addr_translation_if.master addr_translation_if[`NUM_LSU_LANES],
+    VX_addr_trans_if.master addr_trans_if[`NUM_LSU_LANES],
 
     // Inputs
     VX_execute_if.slave     execute_if,
@@ -60,9 +60,17 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     wire req_is_fence, rsp_is_fence;
 
-    wire [NUM_LANES-1:0][`XLEN-1:0] full_addr;
+    // address translation
+    wire [NUM_LANES-1:0][`XLEN-1:0] full_va, full_addr /* pa */;
+    wire [NUM_LANES-1:0] pa_vaild;  // use full_pa only when pa_valid is high
+
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_full_addr
-        assign full_addr[i] = execute_if.data.rs1_data[i] + `SEXT(`XLEN, execute_if.data.op_args.lsu.offset);
+        assign full_va[i] = execute_if.data.rs1_data[i] + `SEXT(`XLEN, execute_if.data.op_args.lsu.offset);
+        assign addr_trans_if[i].valid = execute_if.valid;
+        assign addr_trans_if[i].va = full_va[i];
+        assign addr_trans_if[i].store = execute_if.data.op_args.lsu.is_store;
+        assign full_addr[i] = addr_trans_if[i].pa;
+        assign pa_vaild[i] = addr_trans_if[i].ready;
     end
 
     // address type calculation
@@ -133,6 +141,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     wire no_rsp_buf_enable = (mem_req_rw && ~execute_if.data.wb) || req_skip;
 
     assign mem_req_valid = execute_if.valid
+                        && (& pa_vaild) // < request when ALL addrs are translated (optimisation?)
                         && ~req_skip
                         && ~(no_rsp_buf_enable && ~no_rsp_buf_ready)
                         && ~fence_lock;
