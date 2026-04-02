@@ -57,6 +57,12 @@ module bsc_tlb_vxcore_adapter
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
 
+  // vm_enable: SATP MODE bit controls whether address translation is active.
+  // SV32 (XLEN=32): satp[31]=1 enables paging. SV39/SV48 (XLEN=64): satp[63]!=0.
+  // Must be a named wire (not inline in genvar loops) to avoid Verilator issues.
+  logic vm_enable;
+  assign vm_enable = csr_mmu_if.satp[`XLEN-1];
+
   // ---------------------------------------------------------------------------
   // iTLB
   // ---------------------------------------------------------------------------
@@ -68,7 +74,7 @@ module bsc_tlb_vxcore_adapter
   assign core_itlb_comm.req.instruction = 1;  // instruction fetch
   assign core_itlb_comm.req.store       = 0;
   assign core_itlb_comm.priv_lvl        = 0;  // always user mode for the GPU
-  assign core_itlb_comm.vm_enable       = 1;  // TODO: drive from vm_enable DCR
+  assign core_itlb_comm.vm_enable       = vm_enable;
 
   // Translation done when TLB is ready to process AND current lookup is a hit.
   // tlb_ready=0 means the TLB is busy (e.g. PTW in progress) so resp is not valid.
@@ -88,7 +94,7 @@ module bsc_tlb_vxcore_adapter
     assign core_dtlb_comm[i].req.instruction = 0;  // data access
     assign core_dtlb_comm[i].req.store = dtlb_if[i].store;
     assign core_dtlb_comm[i].priv_lvl = 0;  // always user mode for the GPU
-    assign core_dtlb_comm[i].vm_enable = 1;  // TODO: drive from vm_enable DCR
+    assign core_dtlb_comm[i].vm_enable = vm_enable;
 
     assign dtlb_if[i].pa = ppn2pa(dtlb_core_comm[i].resp.ppn, va2off(dtlb_if[i].va));
     assign dtlb_if[i].ready = dtlb_core_comm[i].tlb_ready && !dtlb_core_comm[i].resp.miss;

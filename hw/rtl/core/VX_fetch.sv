@@ -107,7 +107,12 @@ module VX_fetch
 
   // TODO: address translation here
   assign addr_trans_if.valid = schedule_if.valid;  // Start translating as soon as we see the VA
-  assign addr_trans_if.va = {schedule_if.data.PC, 2'b00};  // 4-byte aligned addresses; lower 2 bits are always zero
+  if (PC_BITS == `XLEN) begin: g_pc_fits_vaddr
+    assign addr_trans_if.va = to_fullPC(schedule_if.data.PC);  // 4-byte aligned addresses; lower 2 bits are always zero
+  end else begin: g_pc_does_not_fit_vaddr
+    // PC_BITS = `XLEN-2
+    assign addr_trans_if.va = {to_fullPC(schedule_if.data.PC), 2'b00};  // 4-byte aligned addresses; lower 2 bits are always zero
+  end
   // Icache Request
   assign icache_req_valid = addr_trans_if.ready;  // addr_trans_if.ready implies schedule_if.valid
   assign icache_req_addr = addr_trans_if.pa[2-(`XLEN-PC_BITS)+:ICACHE_ADDR_WIDTH];  // 4-byte aligned addresses;

@@ -21,6 +21,7 @@ module VX_bsc_mmu #(
   mmu_pkg::tlb_cache_comm_t dtlb_core_comm_o[NUM_DTLB_PORTS];
   // CSR Interface
   mmu_pkg::csr_ptw_comm_t csr_ptw_comm_i;
+  // TODO: currently only support RV32
   assign csr_ptw_comm_i.satp    = {{(64-`XLEN){1'b0}}, csr_mmu_if.satp};    // < zero-extend satp
   assign csr_ptw_comm_i.flush   = csr_mmu_if.flush_tlb;
   assign csr_ptw_comm_i.mstatus = mmu_pkg::csr_mstatus_t'(csr_mmu_if.mstatus);
@@ -75,5 +76,29 @@ module VX_bsc_mmu #(
       .ptw_dmem_comm_i(ptw_dmem_comm_o),
       .mem_bus_if(dcache_bus_if)
   );
+
+  always @(posedge clk) begin
+    if (iaddr_if.valid) begin
+      `TRACE(1, ("[VX_bsc_mmu] iTLB req: va=%08x, vm_en=%b\n", iaddr_if.va, core_dtlb_comm_i[0].vm_enable));
+      if (iaddr_if.ready) begin
+        `TRACE(1, ("[VX_bsc_mmu] iTLB rsp: va=%08x pa=%08x\n", iaddr_if.va, iaddr_if.pa));
+      end
+    end
+    if (daddr_if[0].valid) begin
+      `TRACE(1, ("[VX_bsc_mmu] dTLB req: va=%08x, vm_en=%b\n", daddr_if[0].va, core_dtlb_comm_i[0].vm_enable));
+      if (daddr_if[0].ready) begin
+        `TRACE(1, ("[VX_bsc_mmu] dTLB rsp: va=%08x pa=%08x\n", daddr_if[0].va, daddr_if[0].pa));
+      end
+    end
+    if (dcache_bus_if[0].req_valid) begin
+      `TRACE(1, ("[VX_bsc_mmu] PTW req initiated: tag=%08x pgtbl_pa=%08x\n", dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
+      if (dcache_bus_if[0].req_ready) begin
+        `TRACE(1, ("[VX_bsc_mmu] PTW req queued: tag=%08x pgtbl_pa=%08x\n", dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
+      end
+    end
+    if (dcache_bus_if[0].rsp_valid) begin
+      `TRACE(1, ("[VX_bsc_mmu] PTW rsp: tag=%08x pte=%08x\n", dcache_bus_if[0].rsp_data.tag, dcache_bus_if[0].rsp_data.data));
+    end
+  end
 
 endmodule
