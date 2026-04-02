@@ -29,7 +29,8 @@ module VX_dcr_data import VX_gpu_pkg::*; (
     base_dcrs_t dcrs;
 
     initial begin
-        dcrs.startup_addr = 0;
+        // the startup address CANNOT be 0, otherwise will trigger error in fetch stage
+        // dcrs.startup_addr = 0;
         dcrs.startup_arg = 0;
         dcrs.satp = 0;
     end

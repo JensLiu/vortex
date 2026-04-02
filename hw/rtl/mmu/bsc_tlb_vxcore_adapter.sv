@@ -70,7 +70,9 @@ module bsc_tlb_vxcore_adapter
   assign core_itlb_comm.req.valid       = itlb_if.valid;
   assign core_itlb_comm.req.asid        = '0;  // GPU: single shared address space
   assign core_itlb_comm.req.vpn         = va2vpn(itlb_if.va);
-  assign core_itlb_comm.req.passthrough = 0;
+  // When VM is disabled (satp=Bare), bypass translation entirely.
+  // Some BSC MMU paths still perform PTW activity unless passthrough is asserted.
+  assign core_itlb_comm.req.passthrough = ~vm_enable;
   assign core_itlb_comm.req.instruction = 1;  // instruction fetch
   assign core_itlb_comm.req.store       = 0;
   assign core_itlb_comm.priv_lvl        = 0;  // always user mode for the GPU
@@ -90,7 +92,7 @@ module bsc_tlb_vxcore_adapter
     assign core_dtlb_comm[i].req.valid = dtlb_if[i].valid;
     assign core_dtlb_comm[i].req.asid = '0;  // GPU: single shared address space
     assign core_dtlb_comm[i].req.vpn = va2vpn(dtlb_if[i].va);
-    assign core_dtlb_comm[i].req.passthrough = 0;
+    assign core_dtlb_comm[i].req.passthrough = ~vm_enable;
     assign core_dtlb_comm[i].req.instruction = 0;  // data access
     assign core_dtlb_comm[i].req.store = dtlb_if[i].store;
     assign core_dtlb_comm[i].priv_lvl = 0;  // always user mode for the GPU
