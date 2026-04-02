@@ -439,7 +439,9 @@ package VX_trace_pkg;
             `VX_DCR_BASE_STARTUP_ARG0:  `TRACE(level, ("STARTUP_ARG0"))
             `VX_DCR_BASE_STARTUP_ARG1:  `TRACE(level, ("STARTUP_ARG1"))
             `VX_DCR_BASE_MPM_CLASS:     `TRACE(level, ("MPM_CLASS"))
-            default:                    `TRACE(level, ("?"))
+            `VX_DCR_BASE_SATP_BASE_ADDR0: `TRACE(level, ("SATP_BASE_ADDR0"))
+            `VX_DCR_BASE_SATP_BASE_ADDR1: `TRACE(level, ("SATP_BASE_ADDR1"))
+            default:                    `TRACE(level, ("?%0h", addr))
         endcase
     endtask
 

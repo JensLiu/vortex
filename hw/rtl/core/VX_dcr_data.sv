@@ -28,6 +28,12 @@ module VX_dcr_data import VX_gpu_pkg::*; (
 
     base_dcrs_t dcrs;
 
+    initial begin
+        dcrs.startup_addr = 0;
+        dcrs.startup_arg = 0;
+        dcrs.satp = 0;
+    end
+
     always @(posedge clk) begin
        if (dcr_bus_if.write_valid) begin
             case (dcr_bus_if.write_addr)
