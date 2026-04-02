@@ -74,6 +74,16 @@ module VX_fetch
       .rdata({rsp_PC, rsp_tmask})
   );
 
+
+  always @(posedge clk) begin
+    if (icache_req_valid && icache_req_ready) begin
+      `TRACE(1, ("%t: %s tag-store (ALLOC): tag=%0d, pc=0x%0h, tmask=%b\n", $time, INSTANCE_ID, req_tag, schedule_if.data.PC, schedule_if.data.tmask));
+    end
+    if (icache_bus_if.rsp_valid && icache_bus_if.rsp_ready) begin
+      `TRACE(1, ("%t: %s tag-store (FREE): tag=%0d, pc=0x%0h, tmask=%b\n", $time, INSTANCE_ID, rsp_tag, rsp_PC, rsp_tmask));
+    end
+  end
+
 `ifndef L1_ENABLE
   // Ensure that the ibuffer doesn't fill up.
   // This resolves potential deadlock if ibuffer fills and the LSU stalls the execute stage due to pending dcache requests.
@@ -109,18 +119,20 @@ module VX_fetch
   assign addr_trans_if.valid = schedule_if.valid;  // Start translating as soon as we see the VA
   assign addr_trans_if.va = to_fullPC(schedule_if.data.PC);
   // Icache Request
-  assign icache_req_valid = addr_trans_if.ready;  // addr_trans_if.ready implies schedule_if.valid
+  // should imply schedule_if.valid, otherwise we would inject tmask=0 instructions
+  // into the pipeline (the address translation interface should NOT assert ready when there's NO request)
+  assign icache_req_valid = addr_trans_if.ready;
   assign icache_req_addr = addr_trans_if.pa[2-(`XLEN-PC_BITS)+:ICACHE_ADDR_WIDTH];  // 4-byte aligned addresses;
   assign icache_req_tag = {schedule_if.data.uuid, req_tag};
   // NOTE: We need to block FETCH to advance because we haven't finished address translation yet
-  assign schedule_if.ready = icache_req_ready /*The read request can enteer the buffer*/
+  assign schedule_if.ready = icache_req_ready /*The read request can enter the buffer (not full) */
                             && ibuf_ready /* We can issue read requeset (this will not block ongoing d-cache requests) */
                             && addr_trans_if.ready /* Address translatoin finished */;
 
   VX_elastic_buffer #(
       .DATAW  (ICACHE_ADDR_WIDTH + ICACHE_TAG_WIDTH),
       .SIZE   (2),
-      .OUT_REG(1)                                      // external bus should be registered
+      .OUT_REG(1) // external bus should be registered
   ) req_buf (
       .clk      (clk),
       .reset    (reset),
