@@ -1,6 +1,7 @@
 `include "VX_config.vh"
 
 module VX_bsc_mmu #(
+    parameter `STRING INSTANCE_ID = "",
     parameter int unsigned NUM_DTLB_PORTS = `NUM_LSU_BLOCKS * `NUM_LSU_LANES,
     parameter int unsigned NUM_PTW_PORTS  = 1
 ) (
@@ -79,28 +80,32 @@ module VX_bsc_mmu #(
   );
 
   always @(posedge clk) begin
-    `TRACE(1, ("%t: [VX_bsc_mmu] satp=%0h\n", $time, csr_mmu_if.satp));
+    `TRACE(1, ("%t: %s satp=%0h\n", $time, INSTANCE_ID, csr_mmu_if.satp));
     if (iaddr_if.valid) begin
-      `TRACE(1, ("%t: [VX_bsc_mmu] iTLB req: va=%08x, vm_en=%b\n", $time, iaddr_if.va, icache_itlb_comm_i.vm_enable));
+      `TRACE(1, ("%t: %s iTLB req: va=%08x, vm_en=%b\n", $time, INSTANCE_ID, iaddr_if.va, icache_itlb_comm_i.vm_enable));
       if (iaddr_if.ready) begin
-        `TRACE(1, ("%t: [VX_bsc_mmu] iTLB rsp: va=%08x pa=%08x\n", $time, iaddr_if.va, iaddr_if.pa));
+        `TRACE(1, ("%t: %s iTLB rsp: va=%08x pa=%08x\n", $time, INSTANCE_ID, iaddr_if.va, iaddr_if.pa));
+      end else begin
+        `TRACE(1, ("%t: %s iTLB waiting for response\n", $time, INSTANCE_ID));
       end
     end
     if (daddr_if[0].valid) begin
-      `TRACE(1, ("%t: [VX_bsc_mmu] dTLB req: va=%08x, vm_en=%b\n", $time, daddr_if[0].va, core_dtlb_comm_i[0].vm_enable));
+      `TRACE(1, ("%t: %s dTLB req: va=%08x, vm_en=%b\n", $time, INSTANCE_ID, daddr_if[0].va, core_dtlb_comm_i[0].vm_enable));
       if (daddr_if[0].ready) begin
-        `TRACE(1, ("%t: [VX_bsc_mmu] dTLB rsp: va=%08x pa=%08x\n", $time, daddr_if[0].va, daddr_if[0].pa));
+        `TRACE(1, ("%t: %s dTLB rsp: va=%08x pa=%08x\n", $time, INSTANCE_ID, daddr_if[0].va, daddr_if[0].pa));
+      end else begin
+        `TRACE(1, ("%t: %s dTLB waiting for response\n", $time, INSTANCE_ID));
       end
     end
     if (dcache_bus_if[0].req_valid) begin
-      `TRACE(1, ("%t: [VX_bsc_mmu] PTW side request: valid=%b addr=%08x cmd=%b typ=%b kill=%b phys=%b data=%08x\n", $time, ptw_dmem_comm_o[0].req.valid, ptw_dmem_comm_o[0].req.addr, ptw_dmem_comm_o[0].req.cmd, ptw_dmem_comm_o[0].req.typ, ptw_dmem_comm_o[0].req.kill, ptw_dmem_comm_o[0].req.phys, ptw_dmem_comm_o[0].req.data));
-      `TRACE(1, ("%t: [VX_bsc_mmu] PTW req initiated: tag=%08x pgtbl_pa=%08x\n", $time, dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
+      `TRACE(1, ("%t: %s PTW side request: valid=%b addr=%08x cmd=%b typ=%b kill=%b phys=%b data=%08x\n", $time, INSTANCE_ID, ptw_dmem_comm_o[0].req.valid, ptw_dmem_comm_o[0].req.addr, ptw_dmem_comm_o[0].req.cmd, ptw_dmem_comm_o[0].req.typ, ptw_dmem_comm_o[0].req.kill, ptw_dmem_comm_o[0].req.phys, ptw_dmem_comm_o[0].req.data));
+      `TRACE(1, ("%t: %s PTW req initiated: tag=%08x pgtbl_pa=%08x\n", $time, INSTANCE_ID, dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
       if (dcache_bus_if[0].req_ready) begin
-        `TRACE(1, ("%t: [VX_bsc_mmu] PTW req queued: tag=%08x pgtbl_pa=%08x\n", $time, dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
+        `TRACE(1, ("%t: %s PTW req queued: tag=%08x pgtbl_pa=%08x\n", $time, INSTANCE_ID, dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
       end
     end
     if (dcache_bus_if[0].rsp_valid) begin
-      `TRACE(1, ("%t: [VX_bsc_mmu] PTW rsp: tag=%08x pte=%08x\n", $time, dcache_bus_if[0].rsp_data.tag, dcache_bus_if[0].rsp_data.data));
+      `TRACE(1, ("%t: %s PTW rsp: tag=%08x pte=%08x\n", $time, INSTANCE_ID, dcache_bus_if[0].rsp_data.tag, dcache_bus_if[0].rsp_data.data));
     end
   end
 

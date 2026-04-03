@@ -178,11 +178,20 @@ public:
   }
 
   void dcr_write(uint32_t addr, uint32_t value) {
+    // DCR programming is expected to work outside of a "run" window.
+    // However, `run()` ends by asserting reset and `Impl()` leaves reset asserted
+    // after the initial reset sequence. Since `VX_dcr_data` only latches writes
+    // when reset is deasserted, ensure reset is low for the duration of the write.
+    auto reset_prev = device_->reset;
+    device_->reset = 0;
+    this->tick();
     device_->dcr_wr_valid = 1;
     device_->dcr_wr_addr  = addr;
     device_->dcr_wr_data  = value;
     this->tick();
     device_->dcr_wr_valid = 0;
+    this->tick();
+    device_->reset = reset_prev;
     this->tick();
   }
 
@@ -211,6 +220,10 @@ private:
       device_->clk = 1;
       this->eval();
     }
+
+    // Leave reset deasserted after the reset sequence so configuration
+    // (e.g., DCR writes) can be applied before `run()` starts.
+    device_->reset = 0;
   }
 
   void tick() {
@@ -446,4 +459,8 @@ bool sim_trace_enabled() {
 
 void sim_trace_enable(bool enable) {
   vortex::rtlsim::sim_trace_enable(enable);
+}
+
+double sc_time_stamp() {
+  return vortex::rtlsim::sc_time_stamp();
 }

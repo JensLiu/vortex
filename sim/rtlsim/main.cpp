@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
 	vortex::RAM ram(0, RAM_PAGE_SIZE);
 
 	// create processor
-	vortex::Processor processor;
+	rtlsim::Processor processor;
 
 	// attach memory module
 	processor.attach_ram(&ram);

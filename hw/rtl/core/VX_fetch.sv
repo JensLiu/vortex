@@ -75,14 +75,14 @@ module VX_fetch
   );
 
 
-  always @(posedge clk) begin
-    if (icache_req_valid && icache_req_ready) begin
-      `TRACE(1, ("%t: %s tag-store (ALLOC): tag=%0d, pc=0x%0h, tmask=%b\n", $time, INSTANCE_ID, req_tag, schedule_if.data.PC, schedule_if.data.tmask));
-    end
-    if (icache_bus_if.rsp_valid && icache_bus_if.rsp_ready) begin
-      `TRACE(1, ("%t: %s tag-store (FREE): tag=%0d, pc=0x%0h, tmask=%b\n", $time, INSTANCE_ID, rsp_tag, rsp_PC, rsp_tmask));
-    end
-  end
+  // always @(posedge clk) begin
+  //   if (icache_req_valid && icache_req_ready) begin
+  //     `TRACE(1, ("%t: %s tag-store (ALLOC): tag=%0d, pc=0x%0h, tmask=%b\n", $time, INSTANCE_ID, req_tag, schedule_if.data.PC, schedule_if.data.tmask));
+  //   end
+  //   if (icache_bus_if.rsp_valid && icache_bus_if.rsp_ready) begin
+  //     `TRACE(1, ("%t: %s tag-store (FREE): tag=%0d, pc=0x%0h, tmask=%b\n", $time, INSTANCE_ID, rsp_tag, rsp_PC, rsp_tmask));
+  //   end
+  // end
 
 `ifndef L1_ENABLE
   // Ensure that the ibuffer doesn't fill up.

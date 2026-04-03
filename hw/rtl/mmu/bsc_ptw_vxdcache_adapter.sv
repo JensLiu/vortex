@@ -82,24 +82,27 @@ module bsc_ptw_vxdcache_adapter #(
 
   // Debug: trace address translation
   `ifdef DEBUG_ENABLE
-  always @(posedge clk) begin
-    if (ptw_dmem_comm_i[0].req.valid) begin
-      $display("%t: [PTW_ADAPTER] PTW byte_addr=0x%h, word_addr=0x%h, word_offset=%d, DCACHE_ADDR_WIDTH=%d, DCACHE_WORD_SIZE=%d",
-               $time,
-               ptw_dmem_comm_i[0].req.addr,
-               aligned_addr,
-               word_offset,
-               DCACHE_ADDR_WIDTH,
-               DCACHE_WORD_SIZE);
-    end
-    if (mem_bus_if[0].rsp_valid) begin
-      $display("%t: [PTW_ADAPTER] dcache rsp: data=0x%h, extracted_pte=0x%h (offset=%d)",
-               $time,
-               mem_bus_if[0].rsp_data.data,
-               mem_bus_if[0].rsp_data.data[word_offset_r*8+:`XLEN],
-               word_offset_r);
-    end
-  end
+  // always @(posedge clk) begin
+  //   if (ptw_dmem_comm_i[0].req.valid) begin
+  //     $display("%t: [PTW_ADAPTER] PTW byte_addr=0x%h, word_addr=0x%h, word_offset=%d, DCACHE_ADDR_WIDTH=%d, DCACHE_WORD_SIZE=%d",
+  //              $time,
+  //              ptw_dmem_comm_i[0].req.addr,
+  //              aligned_addr,
+  //              word_offset,
+  //              DCACHE_ADDR_WIDTH,
+  //              DCACHE_WORD_SIZE);
+  //   end
+  //   if (mem_bus_if[0].rsp_valid) begin
+  //     $display("%t: [PTW_ADAPTER] dcache rsp: data=0x%h, extracted_pte=0x%h (offset=%d)",
+  //              $time,
+  //              mem_bus_if[0].rsp_data.data,
+  //              mem_bus_if[0].rsp_data.data[word_offset_r*8+:`XLEN],
+  //              word_offset_r);
+  //   end
+  //   if (ptw_dmem_comm_i[0].req.valid && ~mem_bus_if[0].rsp_valid) begin
+  //     $display("%t: [PTW_ADAPTER] Waiting for dcache response...", $time);
+  //   end
+  // end
   `endif
 
   // Response: dcache → PTW
