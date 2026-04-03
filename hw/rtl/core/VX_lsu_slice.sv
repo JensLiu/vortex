@@ -67,14 +67,16 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_full_addr
         assign full_va[i] = execute_if.data.rs1_data[i] + `SEXT(`XLEN, execute_if.data.op_args.lsu.offset);
-        assign addr_trans_if[i].valid = execute_if.valid;
+        // Only active lanes need address translation. Otherwise will have invalid address translation
+        assign addr_trans_if[i].valid = execute_if.valid && execute_if.data.tmask[i];
         assign addr_trans_if[i].va = full_va[i];
         assign addr_trans_if[i].store = execute_if.data.op_args.lsu.is_store;
         assign full_addr[i] = addr_trans_if[i].pa;
-        assign pa_valid[i] = addr_trans_if[i].ready;
+        // Inactive lanes are treated as already translated.
+        assign pa_valid[i] = ~addr_trans_if[i].valid || addr_trans_if[i].ready;
         always @(posedge clk) begin
-            if (addr_trans_if[i].valid && addr_trans_if[i].fault) begin
-                 `TRACE(1, ("%t: %s addr translation fault! va=%p\n", $time, INSTANCE_ID, full_va[i]));
+            if (addr_trans_if[i].valid && addr_trans_if[i].ready && addr_trans_if[i].fault) begin
+                 `TRACE(1, ("%t: %s addr translation fault! va=0x%0h\n", $time, INSTANCE_ID, full_va[i]));
              end
         end
     end
@@ -157,7 +159,11 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     assign no_rsp_buf_valid = execute_if.valid
                            && no_rsp_buf_enable
-                           && (req_skip || mem_req_ready)
+                           // `addr_trans_done` needed, otherwise the commit stage will
+                           //  be held high while we are translating addresses, causing
+                           //  underflow of schedule counter resulting in non-termination
+                           //  of the kernel
+                           && (req_skip || (mem_req_ready && addr_trans_done))
                            && ~fence_lock;
 
     assign execute_if.ready = ((mem_req_ready && addr_trans_done) || req_skip)
