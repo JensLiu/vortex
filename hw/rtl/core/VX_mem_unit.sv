@@ -251,20 +251,6 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
 
         for (genvar j = 0; j < DCACHE_CHANNELS; ++j) begin : g_dcache_bus_if
             `ASSIGN_VX_MEM_BUS_IF (dcache_bus_if[i * DCACHE_CHANNELS + j], dcache_bus_tmp_if[j]);
-            always_ff @(posedge clk) begin
-                if (reset) begin
-                    if (j == 0) begin
-                        $display("%t: [VX_mem_unit] %s: reset", $time, INSTANCE_ID);
-                    end
-                end else begin
-                    if (dcache_bus_tmp_if[j].req_valid) begin
-                        $display("%t: [VX_mem_unit] %s: req: addr=%08x, rw=%b, data=%08x, byteen=%08x, flags=%08x, tag=%08x", $time, INSTANCE_ID, dcache_bus_tmp_if[j].req_data.addr, dcache_bus_tmp_if[j].req_data.rw, dcache_bus_tmp_if[j].req_data.data, dcache_bus_tmp_if[j].req_data.byteen, dcache_bus_tmp_if[j].req_data.flags, dcache_bus_tmp_if[j].req_data.tag);
-                    end
-                    if (dcache_bus_tmp_if[j].rsp_valid) begin
-                        $display("%t: [VX_mem_unit] %s: rsp: data=%08x, tag=%08x", $time, INSTANCE_ID, dcache_bus_tmp_if[j].rsp_data.data, dcache_bus_tmp_if[j].rsp_data.tag);
-                    end
-                end
-            end
         end
     end
 

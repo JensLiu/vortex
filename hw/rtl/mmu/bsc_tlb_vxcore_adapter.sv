@@ -80,8 +80,13 @@ module bsc_tlb_vxcore_adapter
   // Translation done when TLB is ready to process AND current lookup is a hit.
   // tlb_ready=0 means the TLB is busy (e.g. PTW in progress) so resp is not valid.
   assign itlb_if.pa                     = ppn2pa(itlb_core_comm.resp.ppn, va2off(itlb_if.va));
-  assign itlb_if.ready                  = itlb_if.valid && itlb_core_comm.tlb_ready && !itlb_core_comm.resp.miss;
-  assign itlb_if.fault                  = itlb_core_comm.resp.xcpt.fetch;
+  assign itlb_if.ready                  = itlb_if.valid
+                                        && itlb_core_comm.tlb_ready
+                                        && !itlb_core_comm.resp.miss;
+  assign itlb_if.fault                  = itlb_if.valid
+                                        && itlb_core_comm.tlb_ready
+                                        && !itlb_core_comm.resp.miss
+                                        && itlb_core_comm.resp.xcpt.fetch;
 
   // ---------------------------------------------------------------------------
   // dTLB (one port per LSU lane)
@@ -98,8 +103,14 @@ module bsc_tlb_vxcore_adapter
     assign core_dtlb_comm[i].vm_enable = vm_enable;
 
     assign dtlb_if[i].pa = ppn2pa(dtlb_core_comm[i].resp.ppn, va2off(dtlb_if[i].va));
-    assign dtlb_if[i].ready = dtlb_if[i].valid && dtlb_core_comm[i].tlb_ready && !dtlb_core_comm[i].resp.miss;
-    assign dtlb_if[i].fault = dtlb_core_comm[i].resp.xcpt.load | dtlb_core_comm[i].resp.xcpt.store;
+    assign dtlb_if[i].ready = dtlb_if[i].valid
+                 && dtlb_core_comm[i].tlb_ready
+                 && !dtlb_core_comm[i].resp.miss;
+    assign dtlb_if[i].fault = dtlb_if[i].valid
+                 && dtlb_core_comm[i].tlb_ready
+                 && !dtlb_core_comm[i].resp.miss
+                 && (dtlb_core_comm[i].resp.xcpt.load
+                 || dtlb_core_comm[i].resp.xcpt.store);
   end
 
 endmodule

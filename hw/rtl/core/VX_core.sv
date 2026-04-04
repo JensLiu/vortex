@@ -95,7 +95,6 @@ module VX_core import VX_gpu_pkg::*; #(
     ) lsu_mem_unit_if[DCACHE_NUM_LSU_REQS]();
 
     VX_bsc_mmu #(
-        .INSTANCE_ID(`SFORMATF(("%s-mmu", INSTANCE_ID))),
         .NUM_DTLB_PORTS(NUM_DTLB_PORTS),
         .NUM_PTW_PORTS(DCACHE_NUM_PTW_REQS)
     ) bsc_mmu (
