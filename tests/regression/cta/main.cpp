@@ -4,18 +4,8 @@
 #include <vector>
 #include <vortex.h>
 #include "common.h"
-
-#define RT_CHECK(_expr)                                         \
-   do {                                                         \
-     int _ret = _expr;                                          \
-     if (0 == _ret)                                             \
-       break;                                                   \
-     printf("Error: '%s' returned %d!\n", #_expr, (int)_ret);   \
-	 cleanup();			                                              \
-     exit(-1);                                                  \
-   } while (false)
-
-///////////////////////////////////////////////////////////////////////////////
+#include "download_buffer.h"
+#include "espiral.h"
 
 template <typename Type>
 class Comparator {};
@@ -48,11 +38,6 @@ uint32_t blk_x = 1;
 uint32_t blk_y = 1;
 uint32_t blk_z = 1;
 
-vx_device_h device = nullptr;
-vx_buffer_h src_buffer = nullptr;
-vx_buffer_h dst_buffer = nullptr;
-vx_buffer_h krnl_buffer = nullptr;
-vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
 
 static void show_usage() {
@@ -96,16 +81,6 @@ static void parse_args(int argc, char **argv) {
   }
 }
 
-void cleanup() {
-  if (device) {
-    vx_mem_free(src_buffer);
-    vx_mem_free(dst_buffer);
-    vx_mem_free(krnl_buffer);
-    vx_mem_free(args_buffer);
-    vx_dev_close(device);
-  }
-}
-
 int main(int argc, char *argv[]) {
   // parse command arguments
   parse_args(argc, argv);
@@ -114,7 +89,8 @@ int main(int argc, char *argv[]) {
 
   // open device connection
   std::cout << "open device connection" << std::endl;
-  RT_CHECK(vx_dev_open(&device));
+  auto espiral = espiral::Espiral(espiral::backend::VERILATOR);
+  const auto kid = espiral.allocate_kernel(kernel_file);
 
   uint32_t cta_size = blk_x * blk_y * blk_z;
   uint32_t cta_count = grd_x * grd_y * grd_z;
@@ -137,10 +113,9 @@ int main(int argc, char *argv[]) {
 
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;
-  RT_CHECK(vx_mem_alloc(device, src_buf_size, VX_MEM_READ, &src_buffer));
-  RT_CHECK(vx_mem_address(src_buffer, &kernel_arg.src_addr));
-  RT_CHECK(vx_mem_alloc(device, dst_buf_size, VX_MEM_WRITE, &dst_buffer));
-  RT_CHECK(vx_mem_address(dst_buffer, &kernel_arg.dst_addr));
+  auto src_buffer = espiral.allocate_upload_buffer(kid, src_buf_size);
+  kernel_arg.src_addr = src_buffer.get_va();
+  kernel_arg.dst_addr = espiral.allocate_dev_buffer(kid, dst_buf_size);
 
   std::cout << "src_dst=0x" << std::hex << kernel_arg.src_addr << std::endl;
   std::cout << "dev_dst=0x" << std::hex << kernel_arg.dst_addr << std::endl;
@@ -156,27 +131,25 @@ int main(int argc, char *argv[]) {
 
   // upload source buffer0
   std::cout << "upload source buffer0" << std::endl;
-  RT_CHECK(vx_copy_to_dev(src_buffer, h_src.data(), 0, src_buf_size));
-
-  // Upload kernel binary
-  std::cout << "Upload kernel binary" << std::endl;
-  RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
+  src_buffer.set_content(h_src.data(), src_buf_size);
+  espiral.upload(kid, src_buffer);
 
   // upload kernel argument
   std::cout << "upload kernel argument" << std::endl;
-  RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
-
+  espiral.upload_args(kid, &kernel_arg);
+  
   // start device
   std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
-
+  espiral.start_kernel(kid);
+  
   // wait for completion
   std::cout << "wait for completion" << std::endl;
-  RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
+  espiral.wait_kernel(kid, VX_MAX_TIMEOUT);
 
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;
-  RT_CHECK(vx_copy_from_dev(h_dst.data(), dst_buffer, 0, dst_buf_size));
+  espiral::DownloadBuffer dst_buf(kernel_arg.dst_addr, dst_buf_size, h_dst.data());
+  espiral.download(kid, dst_buf);
 
   // verify result
   std::cout << "verify result" << std::endl;
@@ -191,7 +164,7 @@ int main(int argc, char *argv[]) {
 
   // cleanup
   std::cout << "cleanup" << std::endl;
-  cleanup();
+  espiral.free_kernel(kid);
 
   if (errors != 0) {
     std::cout << "Found " << std::dec << errors << " errors!" << std::endl;

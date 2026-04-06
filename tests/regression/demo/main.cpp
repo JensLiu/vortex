@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
   std::cout << "========== We are using espiral ==========" << std::endl;
   std::cout << "open device connection" << std::endl;
   // RT_CHECK(vx_dev_open(&device));
-  espiral::Espiral espiral(espiral::backend::SIMX);
+  espiral::Espiral espiral(espiral::backend::VERILATOR);
 
   uint64_t num_cores, num_warps, num_threads;
   // RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_CORES, &num_cores));

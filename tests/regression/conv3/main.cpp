@@ -84,13 +84,6 @@ static void convolution_cpu(TYPE *O, TYPE *I, TYPE *W, int32_t width, int32_t he
 const char* kernel_file = "kernel.vxbin";
 int size = 32;
 bool use_lmem = false;
-
-vx_device_h device = nullptr;
-vx_buffer_h I_buffer = nullptr;
-vx_buffer_h W_buffer = nullptr;
-vx_buffer_h O_buffer = nullptr;
-vx_buffer_h krnl_buffer = nullptr;
-vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
 
 static void show_usage() {
@@ -122,17 +115,6 @@ static void parse_args(int argc, char **argv) {
   }
 }
 
-void cleanup() {
-  if (device) {
-    vx_mem_free(I_buffer);
-    vx_mem_free(W_buffer);
-    vx_mem_free(O_buffer);
-    vx_mem_free(krnl_buffer);
-    vx_mem_free(args_buffer);
-    vx_dev_close(device);
-  }
-}
-
 int main(int argc, char *argv[]) {
   // parse command arguments
   parse_args(argc, argv);
@@ -141,7 +123,7 @@ int main(int argc, char *argv[]) {
 
   // open device connection
   std::cout << "open device connection" << std::endl;
-  espiral::Espiral espiral(espiral::backend::SIMX);
+  espiral::Espiral espiral(espiral::backend::VERILATOR);
   const auto kid = espiral.allocate_kernel(kernel_file);
 
   std::cout << "data type: " << Comparator<TYPE>::type_str() << std::endl;
@@ -173,7 +155,7 @@ int main(int argc, char *argv[]) {
     const auto local_mem_size = espiral.get_caps(VX_CAPS_LOCAL_MEM_SIZE).value();
     if (w_nbytes > dev_local_mem_size) {
       std::cout << "Error: Not enough local memory: needed=" << w_nbytes << ", available=" << dev_local_mem_size << std::endl;
-      cleanup();
+      espiral.free_kernel(kid);
       exit(1);
     }
   }
@@ -255,7 +237,6 @@ int main(int argc, char *argv[]) {
   // cleanup
   std::cout << "cleanup" << std::endl;
   espiral.free_kernel(kid);
-  cleanup();
 
   if (errors != 0) {
     std::cout << "Found " << std::dec << errors << " errors!" << std::endl;

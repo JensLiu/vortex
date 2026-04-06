@@ -5,18 +5,7 @@
 #include <vector>
 #include <assert.h>
 #include "common.h"
-
-#define RT_CHECK(_expr)                                         \
-   do {                                                         \
-     int _ret = _expr;                                          \
-     if (0 == _ret)                                             \
-       break;                                                   \
-     printf("Error: '%s' returned %d!\n", #_expr, (int)_ret);   \
-	 cleanup();			                                              \
-     exit(-1);                                                  \
-   } while (false)
-
-///////////////////////////////////////////////////////////////////////////////
+#include "espiral.h"
 
 const char* kernel_file = "kernel.vxbin";
 uint32_t count = 0;
@@ -51,16 +40,6 @@ static void parse_args(int argc, char **argv) {
       show_usage();
       exit(-1);
     }
-  }
-}
-
-void cleanup() {
-  if (device) {
-    vx_mem_free(src_buffer);
-    vx_mem_free(dst_buffer);
-    vx_mem_free(krnl_buffer);
-    vx_mem_free(args_buffer);
-    vx_dev_close(device);
   }
 }
 
@@ -161,12 +140,13 @@ int main(int argc, char *argv[]) {
 
   // open device connection
   std::cout << "open device connection" << std::endl;
-  RT_CHECK(vx_dev_open(&device));
+  auto espiral = espiral::Espiral(espiral::backend::VERILATOR);
+  const auto kid = espiral.allocate_kernel(kernel_file);
 
   uint64_t num_cores, num_warps, num_threads;
-  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_CORES, &num_cores));
-  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_WARPS, &num_warps));
-  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_THREADS, &num_threads));
+  num_cores = espiral.get_caps(VX_CAPS_NUM_CORES).value();
+  num_warps = espiral.get_caps(VX_CAPS_NUM_WARPS).value();
+  num_threads = espiral.get_caps(VX_CAPS_NUM_THREADS).value();
 
   uint32_t total_threads = num_cores * num_warps * num_threads;
   uint32_t num_points = count * total_threads;
@@ -179,11 +159,9 @@ int main(int argc, char *argv[]) {
 
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;
-  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &src_buffer));
-  RT_CHECK(vx_mem_address(src_buffer, &kernel_arg.src_addr));
-  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_WRITE, &dst_buffer));
-  RT_CHECK(vx_mem_address(dst_buffer, &kernel_arg.dst_addr));
-
+  auto src_buffer = espiral.allocate_upload_buffer(kid, buf_size);
+  kernel_arg.src_addr = src_buffer.get_va();
+  kernel_arg.dst_addr = espiral.allocate_dev_buffer(kid, buf_size);
   std::cout << "dev_src=0x" << std::hex << kernel_arg.src_addr << std::endl;
   std::cout << "dev_dst=0x" << std::hex << kernel_arg.dst_addr << std::endl;
 
@@ -195,27 +173,25 @@ int main(int argc, char *argv[]) {
 
   // upload source buffer
   std::cout << "upload source buffer" << std::endl;
-  RT_CHECK(vx_copy_to_dev(src_buffer, h_src.data(), 0, buf_size));
-
-  // Upload kernel binary
-  std::cout << "Upload kernel binary" << std::endl;
-  RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
+  src_buffer.set_content(h_src.data(), buf_size);
+  espiral.upload(kid, src_buffer);
 
   // upload kernel argument
   std::cout << "upload kernel argument" << std::endl;
-  RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
+  espiral.upload_args(kid, &kernel_arg);
 
   // start device
   std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
+  espiral.start_kernel(kid);
 
   // wait for completion
   std::cout << "wait for completion" << std::endl;
-  RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
+    espiral.wait_kernel(kid, VX_MAX_TIMEOUT);
 
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;
-  RT_CHECK(vx_copy_from_dev(h_dst.data(), dst_buffer, 0, buf_size));
+  espiral::DownloadBuffer dst_buf(kernel_arg.dst_addr, buf_size, h_dst.data());
+  espiral.download(kid, dst_buf);
 
   // verify result
   std::cout << "verify result" << std::endl;
@@ -237,7 +213,7 @@ int main(int argc, char *argv[]) {
 
   // cleanup
   std::cout << "cleanup" << std::endl;
-  cleanup();
+  espiral.free_kernel(kid);
 
   if (errors != 0) {
     std::cout << "Found " << std::dec << errors << " errors!" << std::endl;

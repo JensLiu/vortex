@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
   // open device connection
   std::cout << "========== We are using espiral ==========" << std::endl;
   std::cout << "open device connection" << std::endl;
-  espiral::Espiral espiral(espiral::backend::SIMX);
+  espiral::Espiral espiral(espiral::backend::VERILATOR);
 
   uint64_t num_cores, num_warps, num_threads;
   num_cores = espiral.get_caps(VX_CAPS_NUM_CORES).value();
