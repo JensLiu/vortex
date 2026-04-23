@@ -21,9 +21,6 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     input wire              clk,
     input wire              reset,
 
-    // Address Translation Interface
-    VX_addr_trans_if.master addr_trans_if[`NUM_LSU_LANES],
-
     // Inputs
     VX_execute_if.slave     execute_if,
 
@@ -60,27 +57,10 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     wire req_is_fence, rsp_is_fence;
 
-    // address translation
-    wire [NUM_LANES-1:0][`XLEN-1:0] full_va, full_addr /* pa */;
-    wire [NUM_LANES-1:0] pa_valid;  // use full_pa only when pa_valid is high
-    wire addr_trans_done = (& pa_valid);
-
+    wire [NUM_LANES-1:0][`XLEN-1:0] full_addr;
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_full_addr
-        assign full_va[i] = execute_if.data.rs1_data[i] + `SEXT(`XLEN, execute_if.data.op_args.lsu.offset);
-        // Only active lanes need address translation. Otherwise will have invalid address translation
-        assign addr_trans_if[i].valid = execute_if.valid && execute_if.data.tmask[i];
-        assign addr_trans_if[i].va = full_va[i];
-        assign addr_trans_if[i].store = execute_if.data.op_args.lsu.is_store;
-        assign full_addr[i] = addr_trans_if[i].pa;
-        // Inactive lanes are treated as already translated.
-        assign pa_valid[i] = ~addr_trans_if[i].valid || addr_trans_if[i].ready;
-        always @(posedge clk) begin
-            if (addr_trans_if[i].valid && addr_trans_if[i].ready && addr_trans_if[i].fault) begin
-                 `TRACE(1, ("%t: %s addr translation fault! va=0x%0h\n", $time, INSTANCE_ID, full_va[i]));
-             end
-        end
+        assign full_addr[i] = execute_if.data.rs1_data[i] + `SEXT(`XLEN, execute_if.data.op_args.lsu.offset);
     end
-
 
     // address type calculation
 
@@ -149,24 +129,17 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     wire req_skip = req_is_fence && ~execute_if.data.eop;
     wire no_rsp_buf_enable = (mem_req_rw && ~execute_if.data.wb) || req_skip;
 
-    // NOTE: `mem_req_ready` does NOT imply `mem_req_valid`. It uses elastic buffer which assigns `ready = ~full`
-    //       the `execution_if.ready` should be guarded by `addr_trans_done`.
     assign mem_req_valid = execute_if.valid
-                        && addr_trans_done // < request when ALL addrs are translated (optimisation?)
                         && ~req_skip
                         && ~(no_rsp_buf_enable && ~no_rsp_buf_ready)
                         && ~fence_lock;
 
     assign no_rsp_buf_valid = execute_if.valid
                            && no_rsp_buf_enable
-                           // `addr_trans_done` needed, otherwise the commit stage will
-                           //  be held high while we are translating addresses, causing
-                           //  underflow of schedule counter resulting in non-termination
-                           //  of the kernel
-                           && (req_skip || (mem_req_ready && addr_trans_done))
+                           && (req_skip || mem_req_ready)
                            && ~fence_lock;
 
-    assign execute_if.ready = ((mem_req_ready && addr_trans_done) || req_skip)
+    assign execute_if.ready = (mem_req_ready || req_skip)
                            && ~(no_rsp_buf_enable && ~no_rsp_buf_ready)
                            && ~fence_lock;
 
