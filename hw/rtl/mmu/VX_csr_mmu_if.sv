@@ -5,10 +5,8 @@ interface VX_csr_mmu_if #(
 );
 
     logic [SATP_WIDTH-1:0] satp;
-    /* verilator lint_off UNUSED */  // TODO: implement TLB shootdowns
     logic flush_tlb;
-    logic [MSTATUS_WIDTH-1:0] mstatus;  // TODO: pass mstatus from CSR
-    /* verilator lint_on UNUSED */
+    logic [MSTATUS_WIDTH-1:0] mstatus;
 
     modport master (
         output satp,
