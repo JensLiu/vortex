@@ -119,11 +119,23 @@ module VX_socket import VX_gpu_pkg::*; #(
     );
 
     ///////////////////////////////////////////////////////////////////////////
+    VX_mem_bus_if #(
+        .DATA_SIZE (DCACHE_WORD_SIZE),
+        .TAG_WIDTH (DCACHE_TAG_WIDTH)   // <TagID only, no ClientID> before PTW request injection
+    ) per_core_dcache_bus_if[`SOCKET_SIZE * DCACHE_NUM_REQS]();
 
     VX_mem_bus_if #(
         .DATA_SIZE (DCACHE_WORD_SIZE),
-        .TAG_WIDTH (DCACHE_TAG_WIDTH)
-    ) per_core_dcache_bus_if[`SOCKET_SIZE * DCACHE_NUM_REQS]();
+        .TAG_WIDTH (DCACHE_TAG_WIDTH)   // <TagID only, no ClientID> before PTW request injection
+    ) per_socket_ptw_bus_if[DCACHE_NUM_PTW_REQS] ();
+
+    // NOTE: Since the number of requests to L1-D is SOCKET_SIZE * DCACHE_NUM_REQS, and we have a per-socket
+    // PTW request, we are NOT able to directly inject a single PTW request to a new channel without modifying
+    // the cache cluster, hence the D-Cache request hub needs to mux between one LSU request and one PTW request.
+    VX_mem_bus_if #(
+        .DATA_SIZE (DCACHE_WORD_SIZE),
+        .TAG_WIDTH (DCACHE_AUG_TAG_WIDTH)   // <TagID + ClientID> after PTW request injection
+    ) per_core_dcache_bus_if_merged[`SOCKET_SIZE * DCACHE_NUM_REQS]();
 
     VX_mem_bus_if #(
         .DATA_SIZE (DCACHE_LINE_SIZE),
@@ -148,7 +160,7 @@ module VX_socket import VX_gpu_pkg::*; #(
         .MSHR_SIZE      (`DCACHE_MSHR_SIZE),
         .MRSQ_SIZE      (`DCACHE_MRSQ_SIZE),
         .MREQ_SIZE      (`DCACHE_WRITEBACK ? `DCACHE_MSHR_SIZE : `DCACHE_MREQ_SIZE),
-        .TAG_WIDTH      (DCACHE_TAG_WIDTH),
+        .TAG_WIDTH      (DCACHE_AUG_TAG_WIDTH),
         .WRITE_ENABLE   (1),
         .WRITEBACK      (`DCACHE_WRITEBACK),
         .DIRTY_BYTES    (`DCACHE_DIRTYBYTES),
@@ -162,7 +174,8 @@ module VX_socket import VX_gpu_pkg::*; #(
     `endif
         .clk            (clk),
         .reset          (dcache_reset),
-        .core_bus_if    (per_core_dcache_bus_if),
+        // Cache cluster sees both LSU + injected PTW requests.
+        .core_bus_if    (per_core_dcache_bus_if_merged),
         .mem_bus_if     (dcache_mem_bus_if)
     );
 
@@ -220,9 +233,6 @@ module VX_socket import VX_gpu_pkg::*; #(
 
         `RESET_RELAY (core_reset, reset);
 
-        VX_dcr_bus_if core_dcr_bus_if();
-        `BUFFER_DCR_BUS_IF (core_dcr_bus_if, dcr_bus_if, 1'b1, (`SOCKET_SIZE > 1))
-
         VX_core #(
             .CORE_ID  ((SOCKET_ID * `SOCKET_SIZE) + core_id),
             .INSTANCE_ID (`SFORMATF(("%s-core%0d", INSTANCE_ID, core_id)))
@@ -231,24 +241,74 @@ module VX_socket import VX_gpu_pkg::*; #(
 
             .clk            (clk),
             .reset          (core_reset),
+            .busy           (per_core_busy[core_id]),
+            // DCRs are passed to the core
+            .base_dcrs      (base_dcrs),
 
-        `ifdef PERF_ENABLE
-            .sysmem_perf    (sysmem_perf_tmp),
-        `endif
-
-            .dcr_bus_if     (core_dcr_bus_if),
-
+            // These requests are using physical addresses
             .dcache_bus_if  (per_core_dcache_bus_if[core_id * DCACHE_NUM_REQS +: DCACHE_NUM_REQS]),
-
             .icache_bus_if  (per_core_icache_bus_if[core_id]),
 
-        `ifdef GBAR_ENABLE
-            .gbar_bus_if    (per_core_gbar_bus_if[core_id]),
-        `endif
+            // address translation interface
+            .iaddr_trans_if (iaddr_trans_if[core_id]),
+            .daddr_trans_if (daddr_trans_if[core_id * LSU_NUM_REQS +: LSU_NUM_REQS])
 
-            .busy           (per_core_busy[core_id])
+        `ifdef GBAR_ENABLE
+            , .gbar_bus_if    (per_core_gbar_bus_if[core_id])
+        `endif
+        `ifdef PERF_ENABLE
+            , .sysmem_perf    (sysmem_perf_tmp)
+        `endif
         );
     end
+
+    // address translation interface from the core
+    VX_addr_trans_if iaddr_trans_if[`SOCKET_SIZE] ();
+    VX_addr_trans_if daddr_trans_if[`SOCKET_SIZE * LSU_NUM_REQS] ();
+
+    VX_addr_trans_if per_core_daddr_trans_if[`SOCKET_SIZE * DCACHE_NUM_REQS]();
+    VX_addr_trans_if per_core_iaddr_trans_if[`SOCKET_SIZE]();
+
+    // DCR capture and SCR passing to the MMU
+    VX_csr_mmu_if csr_mmu_if();
+    base_dcrs_t base_dcrs;
+    VX_dcr_data dcr_data (
+        .clk        (clk),
+        .reset      (reset),
+        .dcr_bus_if (dcr_bus_if),
+        .base_dcrs  (base_dcrs)
+    );
+    always_comb begin: dcr_if
+        csr_mmu_if.satp = base_dcrs.satp;
+        csr_mmu_if.flush_tlb = 0;
+        csr_mmu_if.mstatus = 0;
+    end
+
+    // MMU instantiation
+    VX_bsc_mmu #(
+        .NUM_CORES(`SOCKET_SIZE),
+        .NUM_CHANNELS_PER_CORE(DCACHE_NUM_REQS),
+        .NUM_PTW_PORTS(DCACHE_NUM_PTW_REQS)
+     ) mmu (
+        .clk            (clk),
+        .reset          (reset),
+        .iaddr_if       (per_core_iaddr_trans_if),
+        .daddr_if       (per_core_daddr_trans_if),
+        .csr_mmu_if     (csr_mmu_if),
+        .dcache_bus_if  (per_socket_ptw_bus_if)
+    );
+
+    // Merging LSU + PTW requests and inject them to the L1-D Cache
+    VX_dcache_req_hub #(
+        .NUM_LSU_REQS (DCACHE_NUM_REQS * `SOCKET_SIZE),
+        .NUM_PTW_REQS (DCACHE_NUM_PTW_REQS)
+    ) dcache_req_hub (
+        .clk            (clk),
+        .reset          (reset),
+        .lsu_mem_if     (per_core_dcache_bus_if),
+        .ptw_mem_if     (per_socket_ptw_bus_if),
+        .client_mem_if  (per_core_dcache_bus_if_merged)
+    );
 
     `BUFFER_EX(busy, (| per_core_busy), 1'b1, 1, (`SOCKET_SIZE > 1));
 

@@ -803,8 +803,7 @@ package VX_gpu_pkg;
     localparam DCACHE_CHANNELS	    = `UP((`NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE);
     localparam DCACHE_NUM_PTW_REQS  = 1;
     localparam DCACHE_NUM_LSU_REQS  = `NUM_LSU_BLOCKS * DCACHE_CHANNELS;
-    // NOTE: for now, PTW has its own dedicated MSHR entries
-    localparam DCACHE_NUM_REQS	    = DCACHE_NUM_PTW_REQS + DCACHE_NUM_LSU_REQS;
+    localparam DCACHE_NUM_REQS	    = DCACHE_NUM_LSU_REQS;
 
     // Core request tag Id bits
     localparam DCACHE_MERGED_REQS   = (`NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE;

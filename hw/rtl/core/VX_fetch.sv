@@ -24,6 +24,9 @@ module VX_fetch import VX_gpu_pkg::*; #(
     // Icache interface
     VX_mem_bus_if.master    icache_bus_if,
 
+    // Address translation interface
+    VX_addr_trans_if.master addr_trans_if,
+
     // inputs
     VX_schedule_if.slave    schedule_if,
 
@@ -89,18 +92,26 @@ module VX_fetch import VX_gpu_pkg::*; #(
     end
     wire ibuf_ready = ~pending_ibuf_full[schedule_if.data.wid];
 `else
+  // With L1 cache it is safe (A seperate path to memory so that i-cache cannot block d-cache)
     wire ibuf_ready = 1'b1;
 `endif
 
     `RUNTIME_ASSERT((!schedule_if.valid || schedule_if.data.PC != 0),
         ("%t: *** %s invalid PC=0x%0h, wid=%0d, tmask=%b (#%0d)", $time, INSTANCE_ID, to_fullPC(schedule_if.data.PC), schedule_if.data.wid, schedule_if.data.tmask, schedule_if.data.uuid))
 
+  // TODO: address translation here
+  assign addr_trans_if.valid = schedule_if.valid;  // Start translating as soon as we see the VA
+  assign addr_trans_if.va = to_fullPC(schedule_if.data.PC);
     // Icache Request
-
-    assign icache_req_valid = schedule_if.valid && ibuf_ready;
-    assign icache_req_addr  = schedule_if.data.PC[2-(`XLEN-PC_BITS) +: ICACHE_ADDR_WIDTH]; // 4-byte aligned addresses
-    assign icache_req_tag   = {schedule_if.data.uuid, req_tag};
-    assign schedule_if.ready = icache_req_ready && ibuf_ready;
+  // should imply schedule_if.valid, otherwise we would inject tmask=0 instructions
+  // into the pipeline (the address translation interface should NOT assert ready when there's NO request)
+  assign icache_req_valid = addr_trans_if.ready;
+  assign icache_req_addr = from_fullPC(addr_trans_if.pa)[2-(`XLEN-PC_BITS)+:ICACHE_ADDR_WIDTH];  // 4-byte aligned addresses;
+  assign icache_req_tag = {schedule_if.data.uuid, req_tag};
+  // NOTE: We need to block FETCH to advance because we haven't finished address translation yet
+  assign schedule_if.ready = icache_req_ready /*The read request can enter the buffer (not full) */
+                            && ibuf_ready /* We can issue read requeset (this will not block ongoing d-cache requests) */
+                            && addr_trans_if.ready /* Address translatoin finished */;
 
     VX_elastic_buffer #(
         .DATAW   (ICACHE_ADDR_WIDTH + ICACHE_TAG_WIDTH),

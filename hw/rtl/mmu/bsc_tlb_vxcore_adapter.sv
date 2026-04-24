@@ -2,19 +2,20 @@
 
 module bsc_tlb_vxcore_adapter
 #(
+    parameter int unsigned NUM_ITLB_PORTS = 1,
     parameter int unsigned NUM_DTLB_PORTS = `NUM_LSU_BLOCKS * `NUM_LSU_LANES
 ) (
     // =============== BSC MMU Interface ===============
     // iTLB Interface
-    output mmu_pkg::cache_tlb_comm_t core_itlb_comm,
-    input  mmu_pkg::tlb_cache_comm_t itlb_core_comm,
+    output mmu_pkg::cache_tlb_comm_t core_itlb_comm[NUM_ITLB_PORTS],
+    input  mmu_pkg::tlb_cache_comm_t itlb_core_comm[NUM_ITLB_PORTS],
     // dTLB Interface
     output mmu_pkg::cache_tlb_comm_t core_dtlb_comm[NUM_DTLB_PORTS],
     input  mmu_pkg::tlb_cache_comm_t dtlb_core_comm[NUM_DTLB_PORTS],
 
     // =============== Core Interface ===============
     // Translation Interface
-    VX_addr_trans_if.slave itlb_if,
+    VX_addr_trans_if.slave itlb_if[NUM_ITLB_PORTS],
     VX_addr_trans_if.slave dtlb_if[NUM_DTLB_PORTS],
 
     // =============== CSR Interface ================
@@ -63,30 +64,29 @@ module bsc_tlb_vxcore_adapter
   //       The VX_addr_if interface is synchronous, hence we need to assert ready if there is actually response
 
   // ---------------------------------------------------------------------------
-  // iTLB
+  // iTLB (one port per core)
   // ---------------------------------------------------------------------------
 
-  assign core_itlb_comm.req.valid       = itlb_if.valid;
-  assign core_itlb_comm.req.asid        = '0;  // GPU: single shared address space
-  assign core_itlb_comm.req.vpn         = va2vpn(itlb_if.va);
-  // When VM is disabled (satp=Bare), bypass translation entirely.
-  // Some BSC MMU paths still perform PTW activity unless passthrough is asserted.
-  assign core_itlb_comm.req.passthrough = ~vm_enable;
-  assign core_itlb_comm.req.instruction = 1;  // instruction fetch
-  assign core_itlb_comm.req.store       = 0;
-  assign core_itlb_comm.priv_lvl        = 0;  // always user mode for the GPU
-  assign core_itlb_comm.vm_enable       = vm_enable;
+  for (genvar i = 0; i < NUM_ITLB_PORTS; ++i) begin : g_itlb_if
+    assign core_itlb_comm[i].req.valid = itlb_if[i].valid;
+    assign core_itlb_comm[i].req.asid = '0;  // GPU: single shared address space
+    assign core_itlb_comm[i].req.vpn = va2vpn(itlb_if[i].va);
+    assign core_itlb_comm[i].req.passthrough = ~vm_enable;
+    assign core_itlb_comm[i].req.instruction = 0;  // data access
+    assign core_itlb_comm[i].req.store = itlb_if[i].store;
+    assign core_itlb_comm[i].priv_lvl = 0;  // always user mode for the GPU
+    assign core_itlb_comm[i].vm_enable = vm_enable;
 
-  // Translation done when TLB is ready to process AND current lookup is a hit.
-  // tlb_ready=0 means the TLB is busy (e.g. PTW in progress) so resp is not valid.
-  assign itlb_if.pa                     = ppn2pa(itlb_core_comm.resp.ppn, va2off(itlb_if.va));
-  assign itlb_if.ready                  = itlb_if.valid
-                                        && itlb_core_comm.tlb_ready
-                                        && !itlb_core_comm.resp.miss;
-  assign itlb_if.fault                  = itlb_if.valid
-                                        && itlb_core_comm.tlb_ready
-                                        && !itlb_core_comm.resp.miss
-                                        && itlb_core_comm.resp.xcpt.fetch;
+    assign itlb_if[i].pa = ppn2pa(itlb_core_comm[i].resp.ppn, va2off(itlb_if[i].va));
+    assign itlb_if[i].ready = itlb_if[i].valid
+                 && itlb_core_comm[i].tlb_ready
+                 && !itlb_core_comm[i].resp.miss;
+    assign itlb_if[i].fault = itlb_if[i].valid
+                 && itlb_core_comm[i].tlb_ready
+                 && !itlb_core_comm[i].resp.miss
+                 && (itlb_core_comm[i].resp.xcpt.load
+                 || itlb_core_comm[i].resp.xcpt.store);
+  end
 
   // ---------------------------------------------------------------------------
   // dTLB (one port per LSU lane)

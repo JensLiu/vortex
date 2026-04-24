@@ -31,11 +31,16 @@ module VX_core import VX_gpu_pkg::*; #(
     input sysmem_perf_t     sysmem_perf,
 `endif
 
-    VX_dcr_bus_if.slave     dcr_bus_if,
+    base_dcrs_t             base_dcrs,
 
-    VX_mem_bus_if.master    dcache_bus_if [DCACHE_NUM_REQS],
+    VX_mem_bus_if.master    dcache_bus_if [DCACHE_NUM_LSU_REQS],
 
     VX_mem_bus_if.master    icache_bus_if,
+
+
+    VX_addr_trans_if.master iaddr_trans_if,
+    // One translation port per LSU lane (flattened across blocks).
+    VX_addr_trans_if.master daddr_trans_if[LSU_NUM_REQS],
 
 `ifdef GBAR_ENABLE
     VX_gbar_bus_if.master   gbar_bus_if,
@@ -77,14 +82,6 @@ module VX_core import VX_gpu_pkg::*; #(
     end
 `endif
 
-    base_dcrs_t base_dcrs;
-
-    VX_dcr_data dcr_data (
-        .clk        (clk),
-        .reset      (reset),
-        .dcr_bus_if (dcr_bus_if),
-        .base_dcrs  (base_dcrs)
-    );
 
     `SCOPE_IO_SWITCH (3);
 
@@ -124,6 +121,7 @@ module VX_core import VX_gpu_pkg::*; #(
         .clk            (clk),
         .reset          (reset),
         .icache_bus_if  (icache_bus_if),
+        .addr_trans_if  (iaddr_trans_if),
         .schedule_if    (schedule_if),
         .fetch_if       (fetch_if)
     );
@@ -172,6 +170,7 @@ module VX_core import VX_gpu_pkg::*; #(
 
         .base_dcrs      (base_dcrs),
 
+        .addr_trans_if  (daddr_trans_if),
         .lsu_mem_if     (lsu_mem_if),
 
         .dispatch_if    (dispatch_if),

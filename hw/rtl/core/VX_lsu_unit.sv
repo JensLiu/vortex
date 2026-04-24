@@ -26,7 +26,9 @@ module VX_lsu_unit import VX_gpu_pkg::*; #(
 
     // Outputs
     VX_commit_if.master     commit_if [`ISSUE_WIDTH],
-    VX_lsu_mem_if.master    lsu_mem_if [`NUM_LSU_BLOCKS]
+    VX_lsu_mem_if.master    lsu_mem_if [`NUM_LSU_BLOCKS],
+    // Flattened as: [block0_lane0..laneN-1, block1_lane0..]
+    VX_addr_trans_if.master addr_trans_if [`NUM_LSU_LANES * `NUM_LSU_BLOCKS]
 );
     localparam BLOCK_SIZE = `NUM_LSU_BLOCKS;
     localparam NUM_LANES  = `NUM_LSU_LANES;
@@ -59,6 +61,7 @@ module VX_lsu_unit import VX_gpu_pkg::*; #(
             `SCOPE_IO_BIND  (block_idx)
             .clk        (clk),
             .reset      (reset),
+            .addr_trans_if (addr_trans_if[block_idx * NUM_LANES +: NUM_LANES]),
             .execute_if (per_block_execute_if[block_idx]),
             .result_if  (per_block_result_if[block_idx]),
             .lsu_mem_if (lsu_mem_if[block_idx])
