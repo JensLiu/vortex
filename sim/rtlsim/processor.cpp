@@ -15,22 +15,28 @@
 
 #include "Vrtlsim_shim.h"
 
+#include <verilated.h>
 #ifdef VCD_OUTPUT
 #include <verilated_vcd_c.h>
 #endif
 
-#include <iostream>
+#include <csignal>
+#include <cstdlib>
+#include <cstring>
+#include <unistd.h>
+
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <mem.h>
 
 #include <VX_config.h>
-#include <ostream>
 #include <list>
+#include <ostream>
 #include <queue>
-#include <vector>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 #include <dram_sim.h>
 #include <util.h>
@@ -63,7 +69,7 @@ typedef uint64_t Word;
 #endif
 
 #define VL_WDATA_GETW(lwp, i, n, w) \
-  VL_SEL_IWII(0, n * w, 0, 0, lwp, i * w, w)
+  VL_SEL_IWII(0, n *w, 0, 0, lwp, i *w, w)
 
 using namespace vortex;
 
@@ -76,14 +82,67 @@ double sc_time_stamp() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Signal handling
+
+static volatile std::sig_atomic_t g_sigint_count = 0;
+
+#ifdef VCD_OUTPUT
+static VerilatedVcdC *g_trace_tfp = nullptr;
+#endif
+
+static void on_sigint(int) {
+  ++g_sigint_count;
+  if (g_sigint_count == 1) {
+    const char msg[] = "[rtlsim] SIGINT: requesting graceful shutdown...\n";
+    (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    Verilated::gotFinish(true);
+  } else {
+    const char msg[] = "[rtlsim] SIGINT: forcing exit.\n";
+    (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    std::_Exit(130);
+  }
+}
+
+static void on_fatal_signal(int signo) {
+#ifdef VCD_OUTPUT
+  if (g_trace_tfp != nullptr) {
+    // Best-effort: Verilator trace APIs are not async-signal-safe, but this is
+    // still often good enough to get a readable trace for post-mortem debug.
+    g_trace_tfp->flush();
+    g_trace_tfp->close();
+  }
+#endif
+  const char msg[] = "[rtlsim] FATAL: attempting to finalize trace then re-raise.\n";
+  (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
+
+  std::signal(signo, SIG_DFL);
+  std::raise(signo);
+}
+
+static void install_signal_handlers() {
+  static bool installed = false;
+  if (installed)
+    return;
+  installed = true;
+
+  std::signal(SIGINT, on_sigint);
+  std::signal(SIGTERM, on_sigint);
+
+  std::signal(SIGSEGV, on_fatal_signal);
+  std::signal(SIGABRT, on_fatal_signal);
+  std::signal(SIGBUS, on_fatal_signal);
+  std::signal(SIGILL, on_fatal_signal);
+  std::signal(SIGFPE, on_fatal_signal);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 static bool trace_enabled = false;
 static uint64_t trace_start_time = TRACE_START_TIME;
-static uint64_t trace_stop_time  = TRACE_STOP_TIME;
+static uint64_t trace_stop_time = TRACE_STOP_TIME;
 
 bool sim_trace_enabled() {
-  if (timestamp >= trace_start_time
-   && timestamp < trace_stop_time)
+  if (timestamp >= trace_start_time && timestamp < trace_stop_time)
     return true;
   return trace_enabled;
 }
@@ -97,6 +156,10 @@ void sim_trace_enable(bool enable) {
 class Processor::Impl {
 public:
   Impl() : dram_sim_(PLATFORM_MEMORY_NUM_BANKS, PLATFORM_MEMORY_DATA_SIZE, MEM_CLOCK_RATIO) {
+    // Ensure Ctrl+C triggers a clean finish so traces flush/close properly,
+    // even when rtlsim is used via librtlsim.so (no rtlsim main()).
+    install_signal_handlers();
+
     // force random values for uninitialized signals
     Verilated::randReset(VERILATOR_RESET_VALUE);
     Verilated::randSeed(50);
@@ -107,12 +170,13 @@ public:
     // create RTL module instance
     device_ = new Vrtlsim_shim();
 
-  #ifdef VCD_OUTPUT
+#ifdef VCD_OUTPUT
     Verilated::traceEverOn(true);
     tfp_ = new VerilatedVcdC();
+    g_trace_tfp = tfp_;
     device_->trace(tfp_, 99);
     tfp_->open("trace.vcd");
-  #endif
+#endif
 
     ram_ = nullptr;
 
@@ -126,16 +190,18 @@ public:
   ~Impl() {
     this->cout_flush();
 
-  #ifdef VCD_OUTPUT
+#ifdef VCD_OUTPUT
     tfp_->close();
     delete tfp_;
-  #endif
+    if (g_trace_tfp == tfp_)
+      g_trace_tfp = nullptr;
+#endif
 
     delete device_;
   }
 
   void cout_flush() {
-    for (auto& buf : print_bufs_) {
+    for (auto &buf : print_bufs_) {
       auto str = buf.second.str();
       if (!str.empty()) {
         std::cout << "#" << buf.first << ": " << str << std::endl;
@@ -143,14 +209,14 @@ public:
     }
   }
 
-  void attach_ram(RAM* ram) {
+  void attach_ram(RAM *ram) {
     ram_ = ram;
   }
 
   void run() {
-  #ifndef NDEBUG
+#ifndef NDEBUG
     std::cout << std::dec << timestamp << ": [sim] run()" << std::endl;
-  #endif
+#endif
 
     // reset device
     this->reset();
@@ -162,12 +228,12 @@ public:
     }
 
     // wait on device to go busy
-    while (!device_->busy) {
+    while (!device_->busy && !Verilated::gotFinish()) {
       this->tick();
     }
 
     // wait on device to go idle
-    while (device_->busy) {
+    while (device_->busy && !Verilated::gotFinish()) {
       this->tick();
     }
 
@@ -179,27 +245,26 @@ public:
 
   void dcr_write(uint32_t addr, uint32_t value) {
     device_->dcr_wr_valid = 1;
-    device_->dcr_wr_addr  = addr;
-    device_->dcr_wr_data  = value;
+    device_->dcr_wr_addr = addr;
+    device_->dcr_wr_data = value;
     this->tick();
     device_->dcr_wr_valid = 0;
     this->tick();
   }
 
 private:
-
   void reset() {
     this->mem_bus_reset();
     this->dcr_bus_reset();
 
     print_bufs_.clear();
 
-    for (auto& reqs : pending_mem_reqs_) {
+    for (auto &reqs : pending_mem_reqs_) {
       reqs.clear();
     }
 
     for (int b = 0; b < PLATFORM_MEMORY_NUM_BANKS; ++b) {
-      std::queue<mem_req_t*> empty;
+      std::queue<mem_req_t *> empty;
       std::swap(dram_queue_[b], empty);
     }
 
@@ -211,10 +276,11 @@ private:
       device_->clk = 1;
       this->eval();
     }
-
   }
 
   void tick() {
+    if (Verilated::gotFinish())
+      return;
 
     device_->clk = 0;
     this->eval();
@@ -231,27 +297,27 @@ private:
     for (int b = 0; b < PLATFORM_MEMORY_NUM_BANKS; ++b) {
       if (!dram_queue_[b].empty()) {
         auto mem_req = dram_queue_[b].front();
-        dram_sim_.send_request(mem_req->addr, mem_req->write, [](void* arg) {
+        dram_sim_.send_request(mem_req->addr, mem_req->write, [](void *arg) {
           // mark completed request as ready
           auto orig_req = reinterpret_cast<mem_req_t*>(arg);
-          orig_req->ready = true;
-        }, mem_req);
+          orig_req->ready = true; }, mem_req);
         dram_queue_[b].pop();
       }
     }
 
-  #ifndef NDEBUG
+#ifndef NDEBUG
     fflush(stdout);
-  #endif
+#endif
   }
 
   void eval() {
     device_->eval();
-  #ifdef VCD_OUTPUT
+#ifdef VCD_OUTPUT
     if (sim_trace_enabled()) {
       tfp_->dump(timestamp);
+      tfp_->flush();
     }
-  #endif
+#endif
     ++timestamp;
   }
 
@@ -283,7 +349,7 @@ private:
             if (!mem_rsp->write) {
               // return read responses
               device_->mem_rsp_valid[b] = 1;
-              memcpy(VDataCast<void*, PLATFORM_MEMORY_DATA_SIZE>::get(device_->mem_rsp_data[b]), mem_rsp->data.data(), PLATFORM_MEMORY_DATA_SIZE);
+              memcpy(VDataCast<void *, PLATFORM_MEMORY_DATA_SIZE>::get(device_->mem_rsp_data[b]), mem_rsp->data.data(), PLATFORM_MEMORY_DATA_SIZE);
               device_->mem_rsp_tag[b] = mem_rsp->tag;
             }
             // delete the request
@@ -295,22 +361,21 @@ private:
 
       // process memory requests
       if (device_->mem_req_valid[b] && device_->mem_req_ready[b]) {
-      #if PLATFORM_MEMORY_INTERLEAVE == 1
+#if PLATFORM_MEMORY_INTERLEAVE == 1
         uint64_t byte_addr = (uint64_t(device_->mem_req_addr[b]) * PLATFORM_MEMORY_NUM_BANKS + b) * PLATFORM_MEMORY_DATA_SIZE;
-      #else
+#else
         uint64_t byte_addr = (uint64_t(device_->mem_req_addr[b]) + (b << g_mem_bank_addr_width)) * PLATFORM_MEMORY_DATA_SIZE;
-      #endif
+#endif
         // check read/write
         if (device_->mem_req_rw[b]) {
           auto byteen = device_->mem_req_byteen[b];
-          auto data = VDataCast<uint8_t*, PLATFORM_MEMORY_DATA_SIZE>::get(device_->mem_req_data[b]);
+          auto data = VDataCast<uint8_t *, PLATFORM_MEMORY_DATA_SIZE>::get(device_->mem_req_data[b]);
           // check if console output address
-          if (byte_addr >= uint64_t(IO_COUT_ADDR)
-           && byte_addr < (uint64_t(IO_COUT_ADDR) + IO_COUT_SIZE)) {
+          if (byte_addr >= uint64_t(IO_COUT_ADDR) && byte_addr < (uint64_t(IO_COUT_ADDR) + IO_COUT_SIZE)) {
             // process console output
             for (int i = 0; i < PLATFORM_MEMORY_DATA_SIZE; i++) {
               if ((byteen >> i) & 0x1) {
-                auto& ss_buf = print_bufs_[i];
+                auto &ss_buf = print_bufs_[i];
                 char c = data[i];
                 ss_buf << c;
                 if (c == '\n') {
@@ -338,8 +403,8 @@ private:
             }
 
             auto mem_req = new mem_req_t();
-            mem_req->tag   = device_->mem_req_tag[b];
-            mem_req->addr  = byte_addr;
+            mem_req->tag = device_->mem_req_tag[b];
+            mem_req->addr = byte_addr;
             mem_req->write = true;
             mem_req->ready = false;
 
@@ -352,8 +417,8 @@ private:
         } else {
           // process memory reads
           auto mem_req = new mem_req_t();
-          mem_req->tag   = device_->mem_req_tag[b];
-          mem_req->addr  = byte_addr;
+          mem_req->tag = device_->mem_req_tag[b];
+          mem_req->addr = byte_addr;
           mem_req->write = false;
           mem_req->ready = false;
           ram_->read(mem_req->data.data(), byte_addr, PLATFORM_MEMORY_DATA_SIZE);
@@ -385,9 +450,8 @@ private:
   }
 
 private:
-
   typedef struct {
-    Vrtlsim_shim* device;
+    Vrtlsim_shim *device;
     std::array<uint8_t, PLATFORM_MEMORY_DATA_SIZE> data;
     uint64_t addr;
     uint64_t tag;
@@ -397,17 +461,17 @@ private:
 
   std::unordered_map<int, std::stringstream> print_bufs_;
 
-  std::list<mem_req_t*> pending_mem_reqs_[PLATFORM_MEMORY_NUM_BANKS];
+  std::list<mem_req_t *> pending_mem_reqs_[PLATFORM_MEMORY_NUM_BANKS];
 
-  std::queue<mem_req_t*> dram_queue_[PLATFORM_MEMORY_NUM_BANKS];
+  std::queue<mem_req_t *> dram_queue_[PLATFORM_MEMORY_NUM_BANKS];
 
   std::array<bool, PLATFORM_MEMORY_NUM_BANKS> mem_rd_rsp_ready_;
 
   DramSim dram_sim_;
 
-  Vrtlsim_shim* device_;
+  Vrtlsim_shim *device_;
 
-  RAM* ram_;
+  RAM *ram_;
 
 #ifdef VCD_OUTPUT
   VerilatedVcdC *tfp_;
@@ -417,14 +481,13 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 Processor::Processor()
-  : impl_(new Impl())
-{}
+    : impl_(new Impl()) {}
 
 Processor::~Processor() {
   delete impl_;
 }
 
-void Processor::attach_ram(RAM* mem) {
+void Processor::attach_ram(RAM *mem) {
   impl_->attach_ram(mem);
 }
 
