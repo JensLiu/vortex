@@ -250,8 +250,8 @@ module VX_socket import VX_gpu_pkg::*; #(
             .icache_bus_if  (per_core_icache_bus_if[core_id]),
 
             // address translation interface
-            .iaddr_trans_if (iaddr_trans_if[core_id]),
-            .daddr_trans_if (daddr_trans_if[core_id * LSU_NUM_REQS +: LSU_NUM_REQS])
+            .iaddr_trans_if (per_core_iaddr_trans_if[core_id]),
+            .daddr_trans_if (per_core_daddr_trans_if[core_id * LSU_NUM_REQS +: LSU_NUM_REQS])
 
         `ifdef GBAR_ENABLE
             , .gbar_bus_if    (per_core_gbar_bus_if[core_id])
@@ -263,10 +263,7 @@ module VX_socket import VX_gpu_pkg::*; #(
     end
 
     // address translation interface from the core
-    VX_addr_trans_if iaddr_trans_if[`SOCKET_SIZE] ();
-    VX_addr_trans_if daddr_trans_if[`SOCKET_SIZE * LSU_NUM_REQS] ();
-
-    VX_addr_trans_if per_core_daddr_trans_if[`SOCKET_SIZE * DCACHE_NUM_REQS]();
+    VX_addr_trans_if per_core_daddr_trans_if[`SOCKET_SIZE * LSU_NUM_REQS]();
     VX_addr_trans_if per_core_iaddr_trans_if[`SOCKET_SIZE]();
 
     // DCR capture and SCR passing to the MMU
@@ -287,7 +284,7 @@ module VX_socket import VX_gpu_pkg::*; #(
     // MMU instantiation
     VX_bsc_mmu #(
         .NUM_CORES(`SOCKET_SIZE),
-        .NUM_CHANNELS_PER_CORE(DCACHE_NUM_REQS),
+        .NUM_CHANNELS_PER_CORE(LSU_NUM_REQS),
         .NUM_PTW_PORTS(DCACHE_NUM_PTW_REQS)
      ) mmu (
         .clk            (clk),

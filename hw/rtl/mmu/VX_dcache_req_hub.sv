@@ -16,6 +16,7 @@ module VX_dcache_req_hub
     VX_mem_bus_if.master client_mem_if[NUM_MERGED_PORTS]
 );
 
+    //    localparam `STRING INSTANCE_ID = "VX_dcache_req_hub";
     `UNUSED_VAR(clk)
     `UNUSED_VAR(reset)
 
@@ -63,55 +64,45 @@ module VX_dcache_req_hub
             end
         end
 
-        // Injection port mux logic
-        logic ptw_outstanding;
-        logic ptw_fire = ptw_mem_if[0].req_valid && client_mem_if[INJECT_IDX].req_ready && !ptw_outstanding;
-        // TODO: make sure this is the correct memory response
-        logic ptw_ready = ptw_mem_if[0].rsp_valid && ptw_mem_if[0].rsp_ready;
-        always_ff @(posedge clk) begin
-            if (reset) begin
-                ptw_outstanding <= 1'b0;
-            end else begin
-                if (ptw_fire) begin
-                    ptw_outstanding <= 1'b1;
-                end
-                if (ptw_outstanding && ptw_ready) begin
-                    // TODO: check client ID is PTW
-                    ptw_outstanding <= 1'b0;
-                end
-            end
-        end
-
-        logic use_ptw = ptw_mem_if[0].req_valid && !ptw_outstanding;
-        assign client_mem_if[INJECT_IDX].req_valid = use_ptw ? ptw_mem_if[0].req_valid : lsu_mem_if[INJECT_IDX].req_valid;
-        assign client_mem_if[INJECT_IDX].req_data.tag.uuid = use_ptw ? ptw_mem_if[0].req_data.tag.uuid : lsu_mem_if[INJECT_IDX].req_data.tag.uuid;
+        // request mux
+        logic ptw_rsp, lsu_rsp, ptw_req;
+        assign ptw_req = ptw_mem_if[0].req_valid;
+        assign client_mem_if[INJECT_IDX].req_valid = ptw_req ? ptw_mem_if[0].req_valid : lsu_mem_if[INJECT_IDX].req_valid;
+        assign client_mem_if[INJECT_IDX].req_data.tag.uuid = ptw_req ? ptw_mem_if[0].req_data.tag.uuid : lsu_mem_if[INJECT_IDX].req_data.tag.uuid;
         /* verilator lint_off WIDTHTRUNC */
         // Request Client ID injection
-        assign client_mem_if[INJECT_IDX].req_data.tag.value = use_ptw
+        assign client_mem_if[INJECT_IDX].req_data.tag.value = ptw_req
             ? {MEM_CLIENT_ID_WIDTH'(MEM_CLIENT_PTW), ptw_mem_if[0].req_data.tag.value}
             : {MEM_CLIENT_ID_WIDTH'(MEM_CLIENT_LSU), lsu_mem_if[INJECT_IDX].req_data.tag.value};
         /* verilator lint_on WIDTHTRUNC */
-        assign client_mem_if[INJECT_IDX].req_data.rw     = use_ptw ? ptw_mem_if[0].req_data.rw     : lsu_mem_if[INJECT_IDX].req_data.rw;
-        assign client_mem_if[INJECT_IDX].req_data.addr   = use_ptw ? ptw_mem_if[0].req_data.addr   : lsu_mem_if[INJECT_IDX].req_data.addr;
-        assign client_mem_if[INJECT_IDX].req_data.data   = use_ptw ? ptw_mem_if[0].req_data.data   : lsu_mem_if[INJECT_IDX].req_data.data;
-        assign client_mem_if[INJECT_IDX].req_data.byteen = use_ptw ? ptw_mem_if[0].req_data.byteen : lsu_mem_if[INJECT_IDX].req_data.byteen;
-        assign client_mem_if[INJECT_IDX].req_data.flags  = use_ptw ? ptw_mem_if[0].req_data.flags  : lsu_mem_if[INJECT_IDX].req_data.flags;
+        assign client_mem_if[INJECT_IDX].req_data.rw     = ptw_req ? ptw_mem_if[0].req_data.rw     : lsu_mem_if[INJECT_IDX].req_data.rw;
+        assign client_mem_if[INJECT_IDX].req_data.addr   = ptw_req ? ptw_mem_if[0].req_data.addr   : lsu_mem_if[INJECT_IDX].req_data.addr;
+        assign client_mem_if[INJECT_IDX].req_data.data   = ptw_req ? ptw_mem_if[0].req_data.data   : lsu_mem_if[INJECT_IDX].req_data.data;
+        assign client_mem_if[INJECT_IDX].req_data.byteen = ptw_req ? ptw_mem_if[0].req_data.byteen : lsu_mem_if[INJECT_IDX].req_data.byteen;
+        assign client_mem_if[INJECT_IDX].req_data.flags  = ptw_req ? ptw_mem_if[0].req_data.flags  : lsu_mem_if[INJECT_IDX].req_data.flags;
 
-        // PTW handshake
-        assign ptw_mem_if[0].req_ready = use_ptw ? client_mem_if[INJECT_IDX].req_ready : 1'b0;
-        assign lsu_mem_if[INJECT_IDX].req_ready = use_ptw ? 1'b0 : client_mem_if[INJECT_IDX].req_ready;
-        // Response Client ID removal
-        assign ptw_mem_if[0].rsp_valid           = ptw_outstanding ? client_mem_if[INJECT_IDX].rsp_valid : 1'b0;
-        assign ptw_mem_if[0].rsp_data.tag.uuid = client_mem_if[INJECT_IDX].rsp_data.tag.uuid;
-        assign ptw_mem_if[0].rsp_data.tag.value = ptw_outstanding ? client_mem_if[INJECT_IDX].rsp_data.tag.value[DCACHE_TAG_ID_BITS-1:0] : '0;
-        assign ptw_mem_if[0].rsp_data.data      = ptw_outstanding ? client_mem_if[INJECT_IDX].rsp_data.data : '0;
+        // response demux on Client ID; tag.value = {client_id, tag_id} (DCACHE_AUG_TAG_ID_BITS wide)
+        logic [MEM_CLIENT_ID_WIDTH-1:0] rsp_client_id;
+        assign rsp_client_id = client_mem_if[INJECT_IDX].rsp_data.tag.value[
+            DCACHE_AUG_TAG_ID_BITS-1 -: MEM_CLIENT_ID_WIDTH];
+        assign ptw_rsp = client_mem_if[INJECT_IDX].rsp_valid
+                      && rsp_client_id == MEM_CLIENT_ID_WIDTH'(MEM_CLIENT_PTW);
+        assign lsu_rsp = client_mem_if[INJECT_IDX].rsp_valid
+                      && rsp_client_id == MEM_CLIENT_ID_WIDTH'(MEM_CLIENT_LSU);
 
-        assign lsu_mem_if[INJECT_IDX].rsp_valid           = ptw_outstanding ? 1'b0 : client_mem_if[INJECT_IDX].rsp_valid;
-        assign lsu_mem_if[INJECT_IDX].rsp_data.tag.uuid   = client_mem_if[INJECT_IDX].rsp_data.tag.uuid;
-        assign lsu_mem_if[INJECT_IDX].rsp_data.tag.value  = client_mem_if[INJECT_IDX].rsp_data.tag.value[DCACHE_TAG_ID_BITS-1:0];
-        assign lsu_mem_if[INJECT_IDX].rsp_data.data = client_mem_if[INJECT_IDX].rsp_data.data;
+        assign ptw_mem_if[0].req_ready = ptw_req ? client_mem_if[INJECT_IDX].req_ready : 1'b0;
+        assign ptw_mem_if[0].rsp_valid = ptw_rsp ? client_mem_if[INJECT_IDX].rsp_valid : 1'b0;
+        assign ptw_mem_if[0].rsp_data.tag.uuid = ptw_rsp ? client_mem_if[INJECT_IDX].rsp_data.tag.uuid : '0;
+        assign ptw_mem_if[0].rsp_data.tag.value = ptw_rsp ? client_mem_if[INJECT_IDX].rsp_data.tag.value[DCACHE_TAG_ID_BITS-1:0] : '0;
+        assign ptw_mem_if[0].rsp_data.data = ptw_rsp ? client_mem_if[INJECT_IDX].rsp_data.data : '0;
 
-        assign client_mem_if[INJECT_IDX].rsp_ready = ptw_outstanding ? ptw_mem_if[0].rsp_ready : lsu_mem_if[INJECT_IDX].rsp_ready;
+        assign lsu_mem_if[INJECT_IDX].req_ready = !ptw_req ? client_mem_if[INJECT_IDX].req_ready : 1'b0;
+        assign lsu_mem_if[INJECT_IDX].rsp_valid           = lsu_rsp ? client_mem_if[INJECT_IDX].rsp_valid : 1'b0;
+        assign lsu_mem_if[INJECT_IDX].rsp_data.tag.uuid   = lsu_rsp ? client_mem_if[INJECT_IDX].rsp_data.tag.uuid : '0;
+        assign lsu_mem_if[INJECT_IDX].rsp_data.tag.value  = lsu_rsp ? client_mem_if[INJECT_IDX].rsp_data.tag.value[DCACHE_TAG_ID_BITS-1:0] : '0;
+        assign lsu_mem_if[INJECT_IDX].rsp_data.data = lsu_rsp ? client_mem_if[INJECT_IDX].rsp_data.data : '0;
+
+        assign client_mem_if[INJECT_IDX].rsp_ready = ptw_rsp ? ptw_mem_if[0].rsp_ready : lsu_rsp ? lsu_mem_if[INJECT_IDX].rsp_ready : 0;
 
     end
 

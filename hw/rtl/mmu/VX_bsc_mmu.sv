@@ -5,20 +5,21 @@ module VX_bsc_mmu #(
     parameter int unsigned NUM_CHANNELS_PER_CORE = 1,
     // One dTLB port per translated data request (PTW requests are already physical).
     parameter int unsigned NUM_DTLB_PORTS        = NUM_CORES * NUM_CHANNELS_PER_CORE,
+    parameter int unsigned NUM_ITLB_PORTS        = NUM_CORES,
     parameter int unsigned NUM_PTW_PORTS         = 1
 ) (
     input logic clk,
     input logic reset,
 
-    VX_addr_trans_if.slave iaddr_if     [     NUM_CORES],
+    VX_addr_trans_if.slave iaddr_if     [NUM_ITLB_PORTS],
     VX_addr_trans_if.slave daddr_if     [NUM_DTLB_PORTS],
     VX_csr_mmu_if.slave    csr_mmu_if,
     VX_mem_bus_if.master   dcache_bus_if[ NUM_PTW_PORTS]
 );
 
     // iTLB Interface (one port per core)
-    mmu_pkg::cache_tlb_comm_t icache_itlb_comm_i[     NUM_CORES];
-    mmu_pkg::tlb_cache_comm_t itlb_icache_comm_o[     NUM_CORES];
+    mmu_pkg::cache_tlb_comm_t icache_itlb_comm_i[NUM_ITLB_PORTS];
+    mmu_pkg::tlb_cache_comm_t itlb_icache_comm_o[NUM_ITLB_PORTS];
     // dTLB interface
     mmu_pkg::cache_tlb_comm_t core_dtlb_comm_i  [NUM_DTLB_PORTS];
     mmu_pkg::tlb_cache_comm_t dtlb_core_comm_o  [NUM_DTLB_PORTS];
@@ -51,7 +52,7 @@ module VX_bsc_mmu #(
     );
 
     bsc_tlb_vxcore_adapter #(
-        .NUM_ITLB_PORTS(NUM_CORES),
+        .NUM_ITLB_PORTS(NUM_ITLB_PORTS),
         .NUM_DTLB_PORTS(NUM_DTLB_PORTS)
     ) tlb_adapter (
         .core_itlb_comm(icache_itlb_comm_i),
@@ -73,37 +74,79 @@ module VX_bsc_mmu #(
         .mem_bus_if     (dcache_bus_if)
     );
 
-    always @(posedge clk) begin
-        // if (iaddr_if.valid) begin
-        //   `TRACE(0, ("%t: %s iTLB req: va=%08x, vm_en=%b\n", $time, INSTANCE_ID, iaddr_if.va, icache_itlb_comm_i.vm_enable));
-        //   if (iaddr_if.ready) begin
-        //     `TRACE(0, ("%t: %s iTLB rsp: va=%08x pa=%08x\n", $time, INSTANCE_ID, iaddr_if.va, iaddr_if.pa));
-        //   end else begin
-        //     `TRACE(0, ("%t: %s iTLB waiting for response\n", $time, INSTANCE_ID));
-        //   end
-        // end
-        // if (daddr_if[0].valid) begin
-        //   `TRACE(0, ("%t: %s dTLB req: va=%08x, vm_en=%b\n", $time, INSTANCE_ID, daddr_if[0].va, core_dtlb_comm_i[0].vm_enable));
-        //   if (daddr_if[0].ready) begin
-        //     `TRACE(0, ("%t: %s dTLB rsp: va=%08x pa=%08x\n", $time, INSTANCE_ID, daddr_if[0].va, daddr_if[0].pa));
-        //   end else begin
-        //     `TRACE(0, ("%t: %s dTLB waiting for response\n", $time, INSTANCE_ID));
-        //   end
-        // end
-        //    if (dcache_bus_if[0].req_valid) begin
-        //        `TRACE(0,
-        //               ("%t: %s PTW side request: valid=%b addr=%08x cmd=%b typ=%b kill=%b phys=%b data=%08x\n", $time, INSTANCE_ID, ptw_dmem_comm_o[0].req.valid, ptw_dmem_comm_o[0].req.addr, ptw_dmem_comm_o[0].req.cmd, ptw_dmem_comm_o[0].req.typ, ptw_dmem_comm_o[0].req.kill, ptw_dmem_comm_o[0].req.phys, ptw_dmem_comm_o[0].req.data));
-        //        `TRACE(0,
-        //               ("%t: %s PTW req initiated: tag=%08x pgtbl_pa=%08x\n", $time, INSTANCE_ID, dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
-        //        if (dcache_bus_if[0].req_ready) begin
-        //            `TRACE(0,
-        //                   ("%t: %s PTW req queued: tag=%08x pgtbl_pa=%08x\n", $time, INSTANCE_ID, dcache_bus_if[0].req_data.tag, dcache_bus_if[0].req_data.addr));
-        //        end
-        //    end
-        //    if (dcache_bus_if[0].rsp_valid) begin
-        //        `TRACE(0,
-        //               ("%t: %s PTW rsp: tag=%08x pte=%08x\n", $time, INSTANCE_ID, dcache_bus_if[0].rsp_data.tag, dcache_bus_if[0].rsp_data.data));
-        //    end
-    end
+    //    for (genvar i = 0; i < NUM_ITLB_PORTS; i++) begin : g_itlb_trace
+    //        localparam int unsigned IDX = i;
+    //        always @(posedge clk) begin
+    //            if (iaddr_if[IDX].valid) begin
+    //                `TRACE(0,
+    //                       ("%t: %s Core %0d iTLB req: va=%08x, vm_en=%b\n",
+    //     $time, INSTANCE_ID, IDX, iaddr_if[IDX].va,
+    //     icache_itlb_comm_i[IDX].vm_enable));
+    //                if (iaddr_if[IDX].ready) begin
+    //                    `TRACE(0,
+    //                           ("%t: %s Core %0d iTLB rsp: va=%08x pa=%08x\n",
+    //     $time, INSTANCE_ID, IDX, iaddr_if[IDX].va,
+    //     iaddr_if[IDX].pa));
+    //                end else begin
+    //                    `TRACE(0, ("%t: %s Core %0d iTLB waiting for response\n",
+    //                           $time, INSTANCE_ID, IDX));
+    //                end
+    //            end
+    //        end
+    //    end
+    //    for (genvar i = 0; i < NUM_DTLB_PORTS; i++) begin : g_dtlb_trace
+    //        localparam int unsigned IDX = i;
+    //        always @(posedge clk) begin
+    //            if (daddr_if[IDX].valid) begin
+    //                `TRACE(0,
+    //                       ("%t: %s dTLB req: va=%08x, vm_en=%b\n",
+    //     $time, INSTANCE_ID, IDX, daddr_if[IDX].va,
+    //     core_dtlb_comm_i[IDX].vm_enable));
+    //                if (daddr_if[IDX].ready) begin
+    //                    `TRACE(0,
+    //                           ("%t: %s dTLB rsp: va=%08x pa=%08x\n",
+    //     $time, INSTANCE_ID, daddr_if[IDX].va,
+    //     daddr_if[IDX].pa));
+    //                end else begin
+    //                    `TRACE(0, ("%t: %s dTLB waiting for response\n", $time, INSTANCE_ID));
+    //                end
+    //            end
+    //        end
+    //    end
+    //
+    //     for (genvar i = 0; i < NUM_PTW_PORTS; i++) begin : g_ptw_trace
+    // 
+    //         always @(posedge clk) begin
+    //             if (dcache_bus_if[i].req_valid) begin
+    //                 `TRACE(0, ({
+    //                        "%t: %s PTW side request: ",
+    //                        "valid=%b addr=%08x cmd=%b typ=%b ",
+    //                        "kill=%b phys=%b data=%08x\n"
+    //                        }, $time, INSTANCE_ID, ptw_dmem_comm_o[i].req.valid,
+    //                            ptw_dmem_comm_o[i].req.addr, ptw_dmem_comm_o[i].req.cmd,
+    //                            ptw_dmem_comm_o[i].req.typ, ptw_dmem_comm_o[i].req.kill,
+    //                            ptw_dmem_comm_o[i].req.phys, ptw_dmem_comm_o[i].req.data));
+    //                 `TRACE(0,
+    //                        ("%t: %s PTW req initiated: tag=%08x pgtbl_pa=%08x\n",
+    //         $time, INSTANCE_ID,
+    //         dcache_bus_if[i].req_data.tag,
+    //         dcache_bus_if[i].req_data.addr));
+    //                 if (dcache_bus_if[i].req_ready) begin
+    //                     `TRACE(0,
+    //                            ("%t: %s PTW req queued: tag=%08x pgtbl_pa=%08x\n",
+    //         $time, INSTANCE_ID,
+    //         dcache_bus_if[i].req_data.tag,
+    //         dcache_bus_if[i].req_data.addr));
+    //                 end
+    //             end
+    //             if (dcache_bus_if[i].rsp_valid) begin
+    //                 `TRACE(0,
+    //                        ("%t: %s PTW rsp: tag=%08x pte=%08x\n",
+    //         $time, INSTANCE_ID,
+    //         dcache_bus_if[i].rsp_data.tag,
+    //         dcache_bus_if[i].rsp_data.data));
+    //             end
+    //         end
+    //     end
 
 endmodule
