@@ -18,9 +18,10 @@ module bsc_ptw_vxdcache_adapter #(
     //  - PTW request is held stable until response is received
     //  - Single outstanding request at a time
 
-    localparam int unsigned DCACHE_WORD_SIZE = VX_gpu_pkg::DCACHE_WORD_SIZE;
-    localparam int unsigned DCACHE_ADDR_WIDTH = VX_gpu_pkg::DCACHE_ADDR_WIDTH;
-    localparam int unsigned DCACHE_ADDR_OFFSET_BITS = $clog2(DCACHE_WORD_SIZE);
+    // We are adapting to the L2 cache interface
+    localparam int unsigned WORD_SIZE = VX_gpu_pkg::DCACHE_LINE_SIZE;
+    localparam int unsigned ADDR_OFFSET_BITS = $clog2(WORD_SIZE);
+    localparam int unsigned ADDR_WIDTH = `MEM_ADDR_WIDTH - ADDR_OFFSET_BITS;
 
     // PTE size in bytes: 4 for SV32 (XLEN=32), 8 for SV39 (XLEN=64)
     // localparam int unsigned PTE_SIZE = `XLEN / 8;
@@ -32,18 +33,16 @@ module bsc_ptw_vxdcache_adapter #(
     // Extract from the PTW byte address by dropping the low DCACHE_ADDR_OFFSET_BITS bits:
     //   word_addr = byte_addr[DCACHE_ADDR_WIDTH+DCACHE_ADDR_OFFSET_BITS-1 : DCACHE_ADDR_OFFSET_BITS]
     //             = byte_addr[MEM_ADDR_WIDTH-1 : log2(DCACHE_WORD_SIZE)]
-    logic [      DCACHE_ADDR_WIDTH-1:0] aligned_addr;
+    logic [      ADDR_WIDTH-1:0] aligned_addr;
     // Byte offset within the dcache word (selects which PTE inside the cache word).
-    logic [DCACHE_ADDR_OFFSET_BITS-1:0] word_offset;
+    logic [ADDR_OFFSET_BITS-1:0] word_offset;
     // Registered word_offset for response extraction (captured when request is sent)
-    logic [DCACHE_ADDR_OFFSET_BITS-1:0] word_offset_r;
+    logic [ADDR_OFFSET_BITS-1:0] word_offset_r;
     always_comb begin
         // Strip low DCACHE_ADDR_OFFSET_BITS (byte offset within word) to get word address.
-        aligned_addr = DCACHE_ADDR_WIDTH'(ptw_dmem_comm_i[0].req.addr >> DCACHE_ADDR_OFFSET_BITS);
-        word_offset  = ptw_dmem_comm_i[0].req.addr[DCACHE_ADDR_OFFSET_BITS-1:0];
+        aligned_addr = ADDR_WIDTH'(ptw_dmem_comm_i[0].req.addr >> ADDR_OFFSET_BITS);
+        word_offset  = ptw_dmem_comm_i[0].req.addr[ADDR_OFFSET_BITS-1:0];
     end
-
-    // PTW holds request stable until response, so word_offset is valid when response arrives.
     // However, we register it for timing closure since response path is registered.
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -54,10 +53,18 @@ module bsc_ptw_vxdcache_adapter #(
     end
     // NOTE: The MMU expect synchronous response
 
+    // IMPORTANT:
+    // PTW holds req.valid combinatorially high for 2 extra cycles after the dcache handshake
+    // because both the request path and dmem_ready path are registered (1 cycle each).
+    // Cache hits have no MSHR entry to detect duplicates, so the dcache accepts it and
+    // returns a second response that corrupts the next page-table walk.
+    // req_accepted suppresses re-assertion until PTW deasserts req.valid (entering S_WAIT).
+    logic req_accepted;
     // Request: PTW → dcache
     // NOTE: we don't need to check the offset because Vortex doesn't have atomic operations
     always_ff @(posedge clk) begin
         if (reset) begin
+            req_accepted                     <= 1'b0;
             mem_bus_if[0].req_valid          <= 1'b0;
             mem_bus_if[0].req_data.rw        <= '0;
             mem_bus_if[0].req_data.addr      <= '0;
@@ -67,7 +74,18 @@ module bsc_ptw_vxdcache_adapter #(
             mem_bus_if[0].req_data.tag.uuid  <= '0;
             mem_bus_if[0].req_data.tag.value <= '0;
         end else begin
-            mem_bus_if[0].req_valid          <= ptw_dmem_comm_i[0].req.valid;
+            // PTW deasserts req.valid when entering S_WAIT (between walk levels).
+            // That clears req_accepted so the next walk level can fire.
+            if (!ptw_dmem_comm_i[0].req.valid) begin
+                req_accepted            <= 1'b0;
+                mem_bus_if[0].req_valid <= 1'b0;
+            end else if (mem_bus_if[0].req_valid && mem_bus_if[0].req_ready) begin
+                // Handshake: suppress re-assertion while PTW still holds req.valid high.
+                req_accepted            <= 1'b1;
+                mem_bus_if[0].req_valid <= 1'b0;
+            end else if (!req_accepted) begin
+                mem_bus_if[0].req_valid <= ptw_dmem_comm_i[0].req.valid;
+            end
             mem_bus_if[0].req_data.rw        <= 0;
             mem_bus_if[0].req_data.addr      <= aligned_addr;
             mem_bus_if[0].req_data.byteen    <= '1;
@@ -79,30 +97,6 @@ module bsc_ptw_vxdcache_adapter #(
         end
     end
 
-    // Debug: trace address translation
-`ifdef DEBUG_ENABLE
-    // always @(posedge clk) begin
-    //   if (ptw_dmem_comm_i[0].req.valid) begin
-    //     $display("%t: [PTW_ADAPTER] PTW byte_addr=0x%h, word_addr=0x%h, word_offset=%d, DCACHE_ADDR_WIDTH=%d, DCACHE_WORD_SIZE=%d",
-    //              $time,
-    //              ptw_dmem_comm_i[0].req.addr,
-    //              aligned_addr,
-    //              word_offset,
-    //              DCACHE_ADDR_WIDTH,
-    //              DCACHE_WORD_SIZE);
-    //   end
-    //   if (mem_bus_if[0].rsp_valid) begin
-    //     $display("%t: [PTW_ADAPTER] dcache rsp: data=0x%h, extracted_pte=0x%h (offset=%d)",
-    //              $time,
-    //              mem_bus_if[0].rsp_data.data,
-    //              mem_bus_if[0].rsp_data.data[word_offset_r*8+:`XLEN],
-    //              word_offset_r);
-    //   end
-    //   if (ptw_dmem_comm_i[0].req.valid && ~mem_bus_if[0].rsp_valid) begin
-    //     $display("%t: [PTW_ADAPTER] Waiting for dcache response...", $time);
-    //   end
-    // end
-`endif
 
     // Response: dcache → PTW
     always_ff @(posedge clk) begin
@@ -137,6 +131,4 @@ module bsc_ptw_vxdcache_adapter #(
             mem_bus_if[0].rsp_ready <= 1'b1;  // < The MMU always accept the response
         end
     end
-
-
 endmodule

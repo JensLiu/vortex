@@ -11,10 +11,10 @@ module VX_bsc_mmu #(
     input logic clk,
     input logic reset,
 
-    VX_addr_trans_if.slave iaddr_if     [NUM_ITLB_PORTS],
-    VX_addr_trans_if.slave daddr_if     [NUM_DTLB_PORTS],
+    VX_addr_trans_if.slave iaddr_if      [NUM_ITLB_PORTS],
+    VX_addr_trans_if.slave daddr_if      [NUM_DTLB_PORTS],
     VX_csr_mmu_if.slave    csr_mmu_if,
-    VX_mem_bus_if.master   dcache_bus_if[ NUM_PTW_PORTS]
+    VX_mem_bus_if.master   ptw_mem_bus_if[ NUM_PTW_PORTS]
 );
 
     // iTLB Interface (one port per core)
@@ -71,7 +71,7 @@ module VX_bsc_mmu #(
         .reset          (reset),
         .dmem_ptw_comm_o(dmem_ptw_comm_i),
         .ptw_dmem_comm_i(ptw_dmem_comm_o),
-        .mem_bus_if     (dcache_bus_if)
+        .mem_bus_if     (ptw_mem_bus_if)
     );
 
     //    for (genvar i = 0; i < NUM_ITLB_PORTS; i++) begin : g_itlb_trace
@@ -114,39 +114,38 @@ module VX_bsc_mmu #(
     //        end
     //    end
     //
-    //     for (genvar i = 0; i < NUM_PTW_PORTS; i++) begin : g_ptw_trace
-    // 
-    //         always @(posedge clk) begin
-    //             if (dcache_bus_if[i].req_valid) begin
-    //                 `TRACE(0, ({
-    //                        "%t: %s PTW side request: ",
-    //                        "valid=%b addr=%08x cmd=%b typ=%b ",
-    //                        "kill=%b phys=%b data=%08x\n"
-    //                        }, $time, INSTANCE_ID, ptw_dmem_comm_o[i].req.valid,
-    //                            ptw_dmem_comm_o[i].req.addr, ptw_dmem_comm_o[i].req.cmd,
-    //                            ptw_dmem_comm_o[i].req.typ, ptw_dmem_comm_o[i].req.kill,
-    //                            ptw_dmem_comm_o[i].req.phys, ptw_dmem_comm_o[i].req.data));
-    //                 `TRACE(0,
-    //                        ("%t: %s PTW req initiated: tag=%08x pgtbl_pa=%08x\n",
-    //         $time, INSTANCE_ID,
-    //         dcache_bus_if[i].req_data.tag,
-    //         dcache_bus_if[i].req_data.addr));
-    //                 if (dcache_bus_if[i].req_ready) begin
-    //                     `TRACE(0,
-    //                            ("%t: %s PTW req queued: tag=%08x pgtbl_pa=%08x\n",
-    //         $time, INSTANCE_ID,
-    //         dcache_bus_if[i].req_data.tag,
-    //         dcache_bus_if[i].req_data.addr));
-    //                 end
-    //             end
-    //             if (dcache_bus_if[i].rsp_valid) begin
-    //                 `TRACE(0,
-    //                        ("%t: %s PTW rsp: tag=%08x pte=%08x\n",
-    //         $time, INSTANCE_ID,
-    //         dcache_bus_if[i].rsp_data.tag,
-    //         dcache_bus_if[i].rsp_data.data));
-    //             end
-    //         end
-    //     end
+    localparam `STRING INSTANCE_ID = "BSC_MMU";
+    for (genvar i = 0; i < NUM_PTW_PORTS; i++) begin : g_ptw_trace
+        always @(posedge clk) begin
+            if (ptw_mem_bus_if[i].req_valid) begin
+                `TRACE(0,
+                       (
+                       "%t: %s PTW side request: valid=%b addr=%08x cmd=%b typ=%b kill=%b phys=%b data=%08x\n"
+                       , $time, INSTANCE_ID, ptw_dmem_comm_o[i].req.valid,
+                           ptw_dmem_comm_o[i].req.addr, ptw_dmem_comm_o[i].req.cmd,
+                           ptw_dmem_comm_o[i].req.typ, ptw_dmem_comm_o[i].req.kill,
+                           ptw_dmem_comm_o[i].req.phys, ptw_dmem_comm_o[i].req.data));
+                `TRACE(0,
+                       ("%t: %s PTW req initiated: tag=%08x pgtbl_pa=%08x\n",
+          $time, INSTANCE_ID,
+          ptw_mem_bus_if[i].req_data.tag,
+          ptw_mem_bus_if[i].req_data.addr));
+                if (ptw_mem_bus_if[i].req_ready) begin
+                    `TRACE(0,
+                           ("%t: %s PTW req queued: tag=%08x pgtbl_pa=%08x\n",
+          $time, INSTANCE_ID,
+          ptw_mem_bus_if[i].req_data.tag,
+          ptw_mem_bus_if[i].req_data.addr));
+                end
+            end
+            if (ptw_mem_bus_if[i].rsp_valid) begin
+                `TRACE(0,
+                       ("%t: %s PTW rsp: tag=%08x pte=%08x\n",
+          $time, INSTANCE_ID,
+          ptw_mem_bus_if[i].rsp_data.tag,
+          ptw_mem_bus_if[i].rsp_data.data));
+            end
+        end
+    end
 
 endmodule

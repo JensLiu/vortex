@@ -121,21 +121,9 @@ module VX_socket import VX_gpu_pkg::*; #(
     ///////////////////////////////////////////////////////////////////////////
     VX_mem_bus_if #(
         .DATA_SIZE (DCACHE_WORD_SIZE),
-        .TAG_WIDTH (DCACHE_TAG_WIDTH)   // <TagID only, no ClientID> before PTW request injection
+        .TAG_WIDTH (DCACHE_TAG_WIDTH)
     ) per_core_dcache_bus_if[`SOCKET_SIZE * DCACHE_NUM_REQS]();
 
-    VX_mem_bus_if #(
-        .DATA_SIZE (DCACHE_WORD_SIZE),
-        .TAG_WIDTH (DCACHE_TAG_WIDTH)   // <TagID only, no ClientID> before PTW request injection
-    ) per_socket_ptw_bus_if[DCACHE_NUM_PTW_REQS] ();
-
-    // NOTE: Since the number of requests to L1-D is SOCKET_SIZE * DCACHE_NUM_REQS, and we have a per-socket
-    // PTW request, we are NOT able to directly inject a single PTW request to a new channel without modifying
-    // the cache cluster, hence the D-Cache request hub needs to mux between one LSU request and one PTW request.
-    VX_mem_bus_if #(
-        .DATA_SIZE (DCACHE_WORD_SIZE),
-        .TAG_WIDTH (DCACHE_AUG_TAG_WIDTH)   // <TagID + ClientID> after PTW request injection
-    ) per_core_dcache_bus_if_merged[`SOCKET_SIZE * DCACHE_NUM_REQS]();
 
     VX_mem_bus_if #(
         .DATA_SIZE (DCACHE_LINE_SIZE),
@@ -160,7 +148,7 @@ module VX_socket import VX_gpu_pkg::*; #(
         .MSHR_SIZE      (`DCACHE_MSHR_SIZE),
         .MRSQ_SIZE      (`DCACHE_MRSQ_SIZE),
         .MREQ_SIZE      (`DCACHE_WRITEBACK ? `DCACHE_MSHR_SIZE : `DCACHE_MREQ_SIZE),
-        .TAG_WIDTH      (DCACHE_AUG_TAG_WIDTH),
+        .TAG_WIDTH      (DCACHE_TAG_WIDTH),
         .WRITE_ENABLE   (1),
         .WRITEBACK      (`DCACHE_WRITEBACK),
         .DIRTY_BYTES    (`DCACHE_DIRTYBYTES),
@@ -175,7 +163,7 @@ module VX_socket import VX_gpu_pkg::*; #(
         .clk            (clk),
         .reset          (dcache_reset),
         // Cache cluster sees both LSU + injected PTW requests.
-        .core_bus_if    (per_core_dcache_bus_if_merged),
+        .core_bus_if    (per_core_dcache_bus_if),
         .mem_bus_if     (dcache_mem_bus_if)
     );
 
@@ -186,7 +174,7 @@ module VX_socket import VX_gpu_pkg::*; #(
             VX_mem_bus_if #(
                 .DATA_SIZE (`L1_LINE_SIZE),
                 .TAG_WIDTH (L1_MEM_TAG_WIDTH)
-            ) l1_mem_bus_if[2]();
+            ) l1_mem_bus_if[3]();
 
             VX_mem_bus_if #(
                 .DATA_SIZE (`L1_LINE_SIZE),
@@ -195,9 +183,10 @@ module VX_socket import VX_gpu_pkg::*; #(
 
             `ASSIGN_VX_MEM_BUS_IF_EX (l1_mem_bus_if[0], icache_mem_bus_if[0], L1_MEM_TAG_WIDTH, ICACHE_MEM_TAG_WIDTH, UUID_WIDTH);
             `ASSIGN_VX_MEM_BUS_IF_EX (l1_mem_bus_if[1], dcache_mem_bus_if[0], L1_MEM_TAG_WIDTH, DCACHE_MEM_TAG_WIDTH, UUID_WIDTH);
+            `ASSIGN_VX_MEM_BUS_IF_EX (l1_mem_bus_if[2], ptw_mem_bus_if[0], L1_MEM_TAG_WIDTH, DCACHE_MEM_TAG_WIDTH, UUID_WIDTH);
 
             VX_mem_arb #(
-                .NUM_INPUTS (2),
+                .NUM_INPUTS (3),
                 .NUM_OUTPUTS(1),
                 .DATA_SIZE  (`L1_LINE_SIZE),
                 .TAG_WIDTH  (L1_MEM_TAG_WIDTH),
@@ -281,30 +270,23 @@ module VX_socket import VX_gpu_pkg::*; #(
         csr_mmu_if.mstatus = 0;
     end
 
+    VX_mem_bus_if #(
+        .DATA_SIZE (`L1_LINE_SIZE),
+        .TAG_WIDTH (L1_MEM_TAG_WIDTH)
+    ) ptw_mem_bus_if[1] ();
+
     // MMU instantiation
     VX_bsc_mmu #(
         .NUM_CORES(`SOCKET_SIZE),
         .NUM_CHANNELS_PER_CORE(LSU_NUM_REQS),
-        .NUM_PTW_PORTS(DCACHE_NUM_PTW_REQS)
+        .NUM_PTW_PORTS(1)
      ) mmu (
         .clk            (clk),
         .reset          (reset),
         .iaddr_if       (per_core_iaddr_trans_if),
         .daddr_if       (per_core_daddr_trans_if),
         .csr_mmu_if     (csr_mmu_if),
-        .dcache_bus_if  (per_socket_ptw_bus_if)
-    );
-
-    // Merging LSU + PTW requests and inject them to the L1-D Cache
-    VX_dcache_req_hub #(
-        .NUM_LSU_REQS (DCACHE_NUM_REQS * `SOCKET_SIZE),
-        .NUM_PTW_REQS (DCACHE_NUM_PTW_REQS)
-    ) dcache_req_hub (
-        .clk            (clk),
-        .reset          (reset),
-        .lsu_mem_if     (per_core_dcache_bus_if),
-        .ptw_mem_if     (per_socket_ptw_bus_if),
-        .client_mem_if  (per_core_dcache_bus_if_merged)
+        .ptw_mem_bus_if (ptw_mem_bus_if)
     );
 
     `BUFFER_EX(busy, (| per_core_busy), 1'b1, 1, (`SOCKET_SIZE > 1));

@@ -33,7 +33,7 @@ module VX_core import VX_gpu_pkg::*; #(
 
     base_dcrs_t             base_dcrs,
 
-    VX_mem_bus_if.master    dcache_bus_if [DCACHE_NUM_LSU_REQS],
+    VX_mem_bus_if.master    dcache_bus_if [DCACHE_NUM_REQS],
 
     VX_mem_bus_if.master    icache_bus_if,
 
