@@ -6,11 +6,11 @@ module bsc_tlb_vxcore_adapter #(
 ) (
     // =============== BSC MMU Interface ===============
     // iTLB Interface
-    output mmu_pkg::cache_tlb_comm_t core_itlb_comm[NUM_ITLB_PORTS],
-    input  mmu_pkg::tlb_cache_comm_t itlb_core_comm[NUM_ITLB_PORTS],
+    output mmu_pkg::core_tlb_comm_t core_itlb_comm[NUM_ITLB_PORTS],
+    input  mmu_pkg::tlb_core_comm_t itlb_core_comm[NUM_ITLB_PORTS],
     // dTLB Interface
-    output mmu_pkg::cache_tlb_comm_t core_dtlb_comm[NUM_DTLB_PORTS],
-    input  mmu_pkg::tlb_cache_comm_t dtlb_core_comm[NUM_DTLB_PORTS],
+    output mmu_pkg::core_tlb_comm_t core_dtlb_comm[NUM_DTLB_PORTS],
+    input  mmu_pkg::tlb_core_comm_t dtlb_core_comm[NUM_DTLB_PORTS],
 
     // =============== Core Interface ===============
     // Translation Interface
@@ -58,8 +58,8 @@ module bsc_tlb_vxcore_adapter #(
     logic vm_enable;
     assign vm_enable = csr_mmu_if.satp[`XLEN-1];
 
-    // NOTE: Even if there's no TLB request, i.e. cache_tlb_comm_t::valid = FALSE
-    //       the response is still valid, i.e. tlb_cache_comm_t::ready = TRUE See FSM in tlb.sv.
+    // NOTE: Even if there's no TLB request, i.e. core_tlb_comm_t::valid = FALSE
+    //       the response is still valid, i.e. tlb_core_comm_t::ready = TRUE See FSM in tlb.sv.
     //       The VX_addr_if interface is synchronous, hence we need to assert ready if there is actually response
 
     // ---------------------------------------------------------------------------
@@ -77,11 +77,8 @@ module bsc_tlb_vxcore_adapter #(
         assign core_itlb_comm[i].vm_enable = vm_enable;
 
         assign itlb_if[i].pa = ppn2pa(itlb_core_comm[i].resp.ppn, va2off(itlb_if[i].va));
-        assign itlb_if[i].ready = itlb_if[i].valid
-                 && itlb_core_comm[i].tlb_ready
-                 && !itlb_core_comm[i].resp.miss;
+        assign itlb_if[i].ready = itlb_if[i].valid && !itlb_core_comm[i].resp.miss;
         assign itlb_if[i].fault = itlb_if[i].valid
-                 && itlb_core_comm[i].tlb_ready
                  && !itlb_core_comm[i].resp.miss
                  && itlb_core_comm[i].resp.xcpt.fetch;
     end
@@ -101,11 +98,8 @@ module bsc_tlb_vxcore_adapter #(
         assign core_dtlb_comm[i].vm_enable = vm_enable;
 
         assign dtlb_if[i].pa = ppn2pa(dtlb_core_comm[i].resp.ppn, va2off(dtlb_if[i].va));
-        assign dtlb_if[i].ready = dtlb_if[i].valid
-                 && dtlb_core_comm[i].tlb_ready
-                 && !dtlb_core_comm[i].resp.miss;
+        assign dtlb_if[i].ready = dtlb_if[i].valid && !dtlb_core_comm[i].resp.miss;
         assign dtlb_if[i].fault = dtlb_if[i].valid
-                 && dtlb_core_comm[i].tlb_ready
                  && !dtlb_core_comm[i].resp.miss
                  && (dtlb_core_comm[i].resp.xcpt.load
                  || dtlb_core_comm[i].resp.xcpt.store);
