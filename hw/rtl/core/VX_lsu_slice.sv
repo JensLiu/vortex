@@ -65,28 +65,14 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     wire [NUM_LANES-1:0] pa_valid;  // use full_pa only when pa_valid is high
     wire addr_trans_done = (& pa_valid);
 
-    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_full_addr
+    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_full_va
         assign full_va[i] = execute_if.data.rs1_data[i] + `SEXT(`XLEN, execute_if.data.op_args.lsu.offset);
-        // Only active lanes need address translation. Otherwise will have invalid address translation
-        assign addr_trans_if[i].valid = execute_if.valid && execute_if.data.tmask[i];
-        assign addr_trans_if[i].va = full_va[i];
-        assign addr_trans_if[i].store = execute_if.data.op_args.lsu.is_store;
-        assign full_addr[i] = addr_trans_if[i].pa;
-        // Inactive lanes are treated as already translated.
-        assign pa_valid[i] = ~addr_trans_if[i].valid || addr_trans_if[i].ready;
-        always @(posedge clk) begin
-            if (addr_trans_if[i].valid && addr_trans_if[i].ready && addr_trans_if[i].fault) begin
-                 `TRACE(1, ("%t: %s addr translation fault! va=0x%0h\n", $time, INSTANCE_ID, full_va[i]));
-             end
-        end
     end
 
-
     // address type calculation
-
     wire [NUM_LANES-1:0][MEM_FLAGS_WIDTH-1:0] mem_req_flags;
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_mem_req_flags
-        wire [MEM_ADDRW-1:0] block_addr = full_addr[i][MEM_ASHIFT +: MEM_ADDRW];
+        wire [MEM_ADDRW-1:0] block_addr = full_va[i][MEM_ASHIFT +: MEM_ADDRW];
         // is I/O address
         wire [MEM_ADDRW-1:0] io_addr_start = MEM_ADDRW'(`XLEN'(`IO_BASE_ADDR) >> MEM_ASHIFT);
         wire [MEM_ADDRW-1:0] io_addr_end = MEM_ADDRW'(`XLEN'(`IO_END_ADDR) >> MEM_ASHIFT);
@@ -98,6 +84,30 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         wire [MEM_ADDRW-1:0] lmem_addr_end = MEM_ADDRW'((`XLEN'(`LMEM_BASE_ADDR) + `XLEN'(1 << `LMEM_LOG_SIZE)) >> MEM_ASHIFT);
         assign mem_req_flags[i][MEM_REQ_FLAG_LOCAL] = (block_addr >= lmem_addr_start) && (block_addr < lmem_addr_end);
     `endif
+    end
+
+    wire [NUM_LANES-1:0] should_addr_trans;
+    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_use_addr_trans
+        // Inactive lanes, MMIO, local memories are not translated
+        assign should_addr_trans[i] = execute_if.valid && execute_if.data.tmask[i] &&
+            !mem_req_flags[i][MEM_REQ_FLAG_IO] && !mem_req_flags[i][MEM_REQ_FLAG_LOCAL] &&
+            !mem_req_flags[i][MEM_REQ_FLAG_FLUSH];
+    end
+
+    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_full_pa
+        // Only active lanes need address translation. Otherwise will have invalid address translation
+        assign addr_trans_if[i].valid = should_addr_trans[i];
+        assign addr_trans_if[i].va = full_va[i];
+        assign addr_trans_if[i].store = execute_if.data.op_args.lsu.is_store;
+        // Address MUX
+        assign full_addr[i] = should_addr_trans[i] ? addr_trans_if[i].pa : full_va[i];
+        // Unused lanes are treated as already translated.
+        assign pa_valid[i] = !should_addr_trans[i] || addr_trans_if[i].ready;
+        always @(posedge clk) begin
+            if (addr_trans_if[i].valid && addr_trans_if[i].ready && addr_trans_if[i].fault) begin
+                 `TRACE(1, ("%t: %s addr translation fault! va=0x%0h\n", $time, INSTANCE_ID, full_va[i]));
+             end
+        end
     end
 
     // schedule memory request
