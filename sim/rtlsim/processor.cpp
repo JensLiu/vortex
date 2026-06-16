@@ -88,6 +88,37 @@ static volatile std::sig_atomic_t g_sigint_count = 0;
 
 #ifdef VCD_OUTPUT
 static VerilatedVcdC *g_trace_tfp = nullptr;
+
+static void rtlsim_finalize_waveform_best_effort(void) {
+  VerilatedVcdC *tp = g_trace_tfp;
+  if (tp == nullptr) {
+    return;
+  }
+  tp->flush();
+  tp->close();
+  g_trace_tfp = nullptr;
+}
+
+// vl_fatal invokes runFlushCallbacks before "Aborting..."/runExitCallbacks. If duplicate
+// copies of Verilator runtime end up linked, addExitCb can register on a different
+// static list than vl_fatal clears; flush callbacks live on that same vl_fatal path and
+// run while gotError()/fatalOnError() reflect a fatal RTL $stop/assert.
+static void rtlsim_vcd_verilated_flush_cb(void *) {
+  if (g_trace_tfp == nullptr) {
+    return;
+  }
+  if (!Verilated::gotError()) {
+    return;
+  }
+  if (!Verilated::fatalOnError()) {
+    return;
+  }
+  rtlsim_finalize_waveform_best_effort();
+}
+
+static void rtlsim_vcd_verilated_exit_cb(void *) {
+  rtlsim_finalize_waveform_best_effort();
+}
 #endif
 
 static void on_sigint(int) {
@@ -97,13 +128,15 @@ static void on_sigint(int) {
     (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
     Verilated::gotFinish(true);
   } else {
-    const char msg[] = "[rtlsim] SIGINT: forcing exit.\n";
+    const char msg[] = "[rtlsim] SIGINT: flushing trace and forcing exit.\n";
     (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
     std::_Exit(130);
   }
 }
 
 static void on_fatal_signal(int signo) {
+  const char msg[] = "[rtlsim] FATAL: attempting to finalize trace then re-raise.\n";
+  (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
 #ifdef VCD_OUTPUT
   if (g_trace_tfp != nullptr) {
     // Best-effort: Verilator trace APIs are not async-signal-safe, but this is
@@ -112,8 +145,6 @@ static void on_fatal_signal(int signo) {
     g_trace_tfp->close();
   }
 #endif
-  const char msg[] = "[rtlsim] FATAL: attempting to finalize trace then re-raise.\n";
-  (void)::write(STDERR_FILENO, msg, sizeof(msg) - 1);
 
   std::signal(signo, SIG_DFL);
   std::raise(signo);
@@ -128,11 +159,11 @@ static void install_signal_handlers() {
   std::signal(SIGINT, on_sigint);
   std::signal(SIGTERM, on_sigint);
 
-  std::signal(SIGSEGV, on_fatal_signal);
-  std::signal(SIGABRT, on_fatal_signal);
-  std::signal(SIGBUS, on_fatal_signal);
-  std::signal(SIGILL, on_fatal_signal);
-  std::signal(SIGFPE, on_fatal_signal);
+  //   std::signal(SIGSEGV, on_fatal_signal);
+  //   std::signal(SIGABRT, on_fatal_signal);
+  //   std::signal(SIGBUS, on_fatal_signal);
+  //   std::signal(SIGILL, on_fatal_signal);
+  //   std::signal(SIGFPE, on_fatal_signal);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -176,6 +207,8 @@ public:
     g_trace_tfp = tfp_;
     device_->trace(tfp_, 99);
     tfp_->open("trace.vcd");
+    Verilated::addFlushCb(rtlsim_vcd_verilated_flush_cb, nullptr);
+    Verilated::addExitCb(rtlsim_vcd_verilated_exit_cb, nullptr);
 #endif
 
     ram_ = nullptr;
@@ -191,10 +224,14 @@ public:
     this->cout_flush();
 
 #ifdef VCD_OUTPUT
+    Verilated::removeFlushCb(rtlsim_vcd_verilated_flush_cb, nullptr);
+    Verilated::removeExitCb(rtlsim_vcd_verilated_exit_cb, nullptr);
+    // Second close OK: VerilatedVcdC::close is a no-op if already closed from exit cb.
     tfp_->close();
     delete tfp_;
-    if (g_trace_tfp == tfp_)
+    if (g_trace_tfp == tfp_) {
       g_trace_tfp = nullptr;
+    }
 #endif
 
     delete device_;

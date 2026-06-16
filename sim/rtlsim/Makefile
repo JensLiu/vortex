@@ -68,6 +68,10 @@ ifneq (,$(findstring -DVM_ENABLE, $(CONFIGS)))
 	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/includes
 	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl
 	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/tlb
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/vortex_adapter
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/tlb/storage
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/tlb/banked_tlb
+	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/tlb/multiport_tlb
 	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/ptw
 	RTL_INCLUDE += -I$(MMU_DIR)/bsc_mmu/rtl/common
 	RTL_PKGS += $(MMU_DIR)/bsc_mmu/includes/mmu_pkg.sv
@@ -108,6 +112,10 @@ VL_FLAGS += -j $(THREADS)
 ifdef DEBUG
 	VL_FLAGS += --trace --trace-structs $(DBG_FLAGS)
 	CXXFLAGS += -g -O0 $(DBG_FLAGS)
+ifdef ASAN
+	CXXFLAGS += -fsanitize=address -fno-omit-frame-pointer
+	LDFLAGS  += -fsanitize=address
+endif
 else
 	VL_FLAGS += -DNDEBUG
 	CXXFLAGS += -O2 -DNDEBUG

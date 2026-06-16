@@ -105,7 +105,14 @@ kernel.elf: $(VX_SRCS)
 
 ESPIRAL_LIB := $(VORTEX_RT_PATH)/libespiral.so
 
-$(ESPIRAL_LIB):
+# Always delegate to the espiral Makefile (FORCE), which then relinks only when
+# espiral.cpp or its headers actually changed. Without this, the bare rule has no
+# prerequisites and Make skips it whenever libespiral.so already exists, leaving
+# a stale lib after editing espiral sources.
+.PHONY: FORCE
+FORCE:
+
+$(ESPIRAL_LIB): FORCE
 	$(MAKE) -C $(VORTEX_HOME)/runtime/espiral lib DESTDIR=$(VORTEX_RT_PATH)
 
 $(PROJECT): $(SRCS) $(ESPIRAL_LIB)
@@ -138,7 +145,13 @@ clean-kernel:
 clean-host:
 	rm -rf $(PROJECT) *.o *.log .depend
 
-clean: clean-kernel clean-host
+# Remove the shared espiral lib too: the $(ESPIRAL_LIB) rule only rebuilds when
+# the file is missing, so deleting it here forces a fresh build next time.
+clean-espiral:
+	rm -f $(ESPIRAL_LIB)
+	$(MAKE) -C $(VORTEX_HOME)/runtime/espiral clean DESTDIR=$(VORTEX_RT_PATH)
+
+clean: clean-kernel clean-host clean-espiral
 
 ifneq ($(MAKECMDGOALS),clean)
     -include .depend

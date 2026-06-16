@@ -24,15 +24,17 @@ using namespace vortex;
 
 #ifdef VM_ENABLE
 // #ifndef NDEBUG
-// #define DBGPRINT(format, ...) do { printf("[VXDRV] " format "", ##__VA_ARGS__); } while (0)
+#define DBGPRINT(format, ...) do { printf("[VXDRV_LOUD] " format "", ##__VA_ARGS__); fflush(stdout); } while (0)
 // #else
-#define DBGPRINT(format, ...) ((void)0)
+// #define DBGPRINT(format, ...) ((void)0)
 // #endif
 #endif
 
 
 RamMemDevice::RamMemDevice(const char *filename, uint32_t wordSize)
   : wordSize_(wordSize) {
+  printf("[VXDRV_INIT] USER_BASE_ADDR=0x%lx\n", (uint64_t)USER_BASE_ADDR);
+  fflush(stdout);
   std::ifstream input(filename);
 
   if (!input) {
@@ -634,12 +636,22 @@ bool MemoryUnit::need_trans(uint64_t dev_pAddr)
     // if (PAGE_TABLE_BASE_ADDR <= dev_pAddr)
     //   return 0;
 
-    // // Check if the address is reserved for IO usage
-    // if (dev_pAddr < USER_BASE_ADDR)
-    //   return 0;
-    // // Check if the address falls within the startup address range
-    // if ((STARTUP_ADDR <= dev_pAddr) && (dev_pAddr <= (STARTUP_ADDR + 0x40000)))
-    //   return 0;
+    // Check if the address is reserved for IO usage
+    if (dev_pAddr < USER_BASE_ADDR) {
+      if (dev_pAddr == 0x480) {
+         printf("[VXDRV_DEBUG] 0x480 is BELOW USER_BASE_ADDR (0x%lx), returning 0\n", (uint64_t)USER_BASE_ADDR);
+         fflush(stdout);
+      }
+      return 0;
+    }
+    // Added: if the address is for local memory
+    if (dev_pAddr > STACK_BASE_ADDR)
+        return 0;
+    
+    if (dev_pAddr == 0x480) {
+       printf("[VXDRV_DEBUG] 0x480 is ABOVE USER_BASE_ADDR (0x%lx) and BELOW STACK_BASE_ADDR, returning 1\n", (uint64_t)USER_BASE_ADDR);
+       fflush(stdout);
+    }
 
     // Now all conditions are not met. Return true because the address needs translation
     return 1;
@@ -686,6 +698,8 @@ uint64_t MemoryUnit::get_pte_address(uint64_t base_ppn, uint64_t vpn)
 
 std::pair<uint64_t, uint8_t> MemoryUnit::page_table_walk(uint64_t vAddr_bits, ACCESS_TYPE type, uint64_t *size_bits)
 {
+  printf("[VXDRV_PTW_PING] vaddr = 0x%lx\n", vAddr_bits);
+  fflush(stdout);
   DBGPRINT("  [MMU:PTW] Start: vaddr = 0x%lx, type = %u.\n", vAddr_bits, type);
   uint8_t level = PT_LEVEL;
   int i = level-1;
@@ -709,6 +723,7 @@ std::pair<uint64_t, uint8_t> MemoryUnit::page_table_walk(uint64_t vAddr_bits, AC
     // Check if it has invalid flag bits.
     if ((pte.v == 0) | ((pte.r == 0) & (pte.w == 1)))
     {
+    //    printf("Invalid PTE, VA=0x%lx\n", vAddr_bits);
        assert(0);
       throw Page_Fault_Exception("  [MMU:PTW] Page Fault : Attempted to access invalid entry.");
     }
