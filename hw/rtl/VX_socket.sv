@@ -276,7 +276,7 @@ module VX_socket import VX_gpu_pkg::*; #(
     ) ptw_mem_bus_if[1] ();
 
     // MMU instantiation
-    VX_bsc_mmu #(
+    VX_mmu #(
         .NUM_CORES(`SOCKET_SIZE),
         .NUM_CHANNELS_PER_CORE(LSU_NUM_REQS),
         .NUM_PTW_PORTS(1)
